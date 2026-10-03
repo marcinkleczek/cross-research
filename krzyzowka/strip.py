@@ -69,7 +69,7 @@ def find_strip(ext: np.ndarray, grid_h: int, cell: int, ink_thresh: int = 40) ->
     strip = Strip()
     g = cv2.GaussianBlur(gray(ext), (3, 3), 0)
     # niższy próg black-hat: skrajna kreska paska graniczy z ciemnym tłem strony (słabszy kontrast)
-    thin = thin_dark(g, max(2, cell // 40), thresh=max(12, int(0.55 * ink_thresh)))
+    thin = thin_dark(g, max(2, cell // 40), thresh=max(18, int(0.75 * ink_thresh)))
     region = thin.copy(); region[:grid_h + int(0.5 * cell)] = 0
     hor, ver = line_masks(region, int(0.25 * cell))
     H, W = region.shape
