@@ -143,12 +143,12 @@ class OpenRouter:
         t = time.time()
 
         def call():
-            st, d = _post_json(self.URL + "/chat/completions", payload, headers)
+            st, d = _post_json(self.URL + "/chat/completions", payload, headers, timeout=120)  # darmowe modele potrafią wisieć minutami
             if st == 200 and isinstance(d, dict) and "choices" not in d:
                 st = 503  # OpenRouter zwraca 200 z polem error przy przeciążeniu dostawcy: traktujemy jak 5xx
             return st, d
 
-        status, data = _with_retry(call)
+        status, data = _with_retry(call, max_tries=3)
         ms = int((time.time() - t) * 1000)
         if status != 200 or not isinstance(data, dict) or "choices" not in data:
             # część darmowych modeli nie obsługuje response_format lub pola reasoning: ponawiamy bez nich
