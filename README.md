@@ -97,3 +97,27 @@ Siatka 16×11 (17×11 dla uciętego IMG_1800) rozpoznana na wszystkich; obszar r
 ```bash
 python tests/test_smoke.py      # lub: python -m pytest -q
 ```
+
+## Etap 3 – benchmark małych modeli językowych (`bench/`)
+
+Baza SQLite (`bench.sqlite`, ścieżka w `BENCH_DB`) z tabelami: `krzyzowki`, `ramki` (kratki opisów i ich OCR), `hasla` (jednostka benchmarku: opis, odpowiedź z klucza, długość, kierunek, kategoria, polskość, typ opisu, flaga `gotowe`), `modele`, `uruchomienia` (kolejka), `odpowiedzi`, `zdarzenia`.
+
+```bash
+python -m bench.importer output                 # import wyników ekstrakcji
+python -m bench.ocr lista                       # ile ramek czeka na odczyt
+python -m bench.ocr uruchom --model haiku       # OCR opisów przez Claude Code (claude -p, narzędzie Read, --json-schema)
+python -m bench.runner modele                   # rejestr: darmowe modele OpenRouter, Ollama (lokalna lub chmura), claude_cli
+python -m bench.runner dodaj --model claude_cli:haiku --wariant z_dlugoscia --limit 100
+python -m bench.runner start                    # worker: wykonuje kolejkę po kolei
+python -m bench.server --port 8010              # pulpit: etapy, dane, OCR, modele, kolejka, wyniki
+```
+
+Zmienne środowiskowe: `OPENROUTER_API_KEY`, `OLLAMA_HOST` (domyślnie `http://127.0.0.1:11434`; chmura: `https://ollama.com` z `OLLAMA_API_KEY`).
+
+**Warianty zadań** (etap 1, pojedyncze hasła): `bez_dlugosci`, `z_dlugoscia`, `wzorzec25`, `wzorzec50` (odsłonięte litery losowane deterministycznie z id hasła), `wybor5` (4 dystraktory tej samej długości z puli odpowiedzi). Prompt i schemat JSON odpowiedzi są wspólne dla wszystkich dostawców (`bench/tasks.py`).
+
+**Ocena**: ścisła = pełna zgodność z kluczem wraz z polskimi znakami (Ł ≠ L); luźna (pomocnicza) = po zdjęciu diakrytyki; top‑5 z listy kandydatów; zgodność długości i wzorca; poprawność formatu; kalibracja (Brier, ECE) z deklarowanej pewności; czas, tokeny, koszt. Agregaty z 95 % przedziałami ufności (bootstrap) wg kategorii, polskości, długości, typu opisu i krzyżówki.
+
+**Dostawcy**: `ollama` (`/api/chat`, `format` = schemat), `openrouter` (zgodny z OpenAI, `response_format` ze schematem, awaryjnie bez), `claude_cli` (`claude -p --model … --json-schema …`, bez narzędzi, jedna tura; rozliczane w abonamencie Claude Code). Każdy błąd 429/5xx jest ponawiany z rosnącym odstępem; wszystkie uruchomienia są wznawialne (odpowiedzi zapisane nie są powtarzane).
+
+Do benchmarku trafiają wyłącznie hasła z flagą `gotowe=1` (opis zweryfikowany, odpowiedź z klucza). `bench/probka.py` ustawia kilkadziesiąt odpowiedzi ręcznych (`zrodlo_odpowiedzi='probka_reczna'`) wyłącznie do testu potoku.

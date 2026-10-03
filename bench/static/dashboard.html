@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Benchmark krzyżówek – pulpit</title>
+<style>
+:root{--bg:#f5f4f0;--panel:#fff;--fg:#1e1c19;--muted:#6a655c;--line:#d8d3c7;--accent:#2d5f8b;--accent-soft:#e3edf5;--ok:#2d6a4f;--warn:#9a5b00;--bad:#9b2c2c;--bar:#2d5f8b;--bar-bg:#e6e2d8;
+ --mono:ui-monospace,Menlo,Consolas,monospace;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--sans)}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+header h1{font-size:1.05rem;margin:0 12px 0 0}
+nav button{all:unset;cursor:pointer;padding:6px 12px;border-radius:999px;border:1px solid var(--line)} nav button[aria-selected="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{padding:14px 16px;max-width:1400px;margin:0 auto}
+.k{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;min-width:0}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+h2{font-size:1rem;margin:0 0 8px} h3{font-size:.9rem;margin:10px 0 6px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.tile{display:grid;gap:2px} .tile b{font-size:1.5rem;font-weight:600;font-variant-numeric:tabular-nums} .tile small{color:var(--muted)}
+.meter{height:8px;background:var(--bar-bg);border-radius:4px;overflow:hidden;margin-top:4px} .meter i{display:block;height:100%;background:var(--bar);border-radius:4px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums} th,td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:500;white-space:nowrap} .tw{overflow-x:auto}
+td.num,th.num{text-align:right} .mono{font-family:var(--mono);font-size:12.5px}
+button,.btn{cursor:pointer;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:inherit} button.p{background:var(--accent);color:#fff;border-color:var(--accent)} button.d{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+input,select,textarea{font:inherit;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);max-width:100%}
+input.short{width:5.5em} .st{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.st.trwa{background:var(--accent-soft);color:var(--accent)} .st.zakonczone{color:var(--ok)} .st.blad{color:var(--bad)} .st.wstrzymane{color:var(--warn)}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .muted{color:var(--muted)}
+.todo li{margin:4px 0} .todo .done{color:var(--ok)} .todo .todo-item{color:var(--fg)}
+img.crop{height:44px;border:1px solid var(--line);border-radius:3px;background:#fff}
+.form{display:flex;flex-wrap:wrap;gap:8px;align-items:end} .form label{display:grid;gap:2px;font-size:12px;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:6px} .bar i{display:inline-block;height:10px;background:var(--bar);border-radius:2px}
+pre{font:11.5px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;max-height:50vh}
+#msg{position:fixed;right:16px;bottom:16px;background:var(--fg);color:var(--bg);padding:8px 12px;border-radius:6px;display:none;max-width:60ch}
+@media (prefers-color-scheme:dark){:root{--bg:#171618;--panel:#201f22;--fg:#eae6de;--muted:#a19b90;--line:#39363c;--accent:#7fb2e0;--accent-soft:#1f3345;--ok:#7fc8a3;--warn:#e0a24a;--bad:#e07b7b;--bar:#7fb2e0;--bar-bg:#2c2a2f;color-scheme:dark}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Benchmark krzyżówek</h1>
+  <nav id="nav">
+    <button data-t="przeglad" aria-selected="true">Przegląd</button>
+    <button data-t="dane">Dane</button>
+    <button data-t="ocr">OCR</button>
+    <button data-t="modele">Modele</button>
+    <button data-t="kolejka">Kolejka</button>
+    <button data-t="wyniki">Wyniki</button>
+  </nav>
+  <span id="worker" class="muted"></span>
+</header>
+<main id="main"></main>
+<div id="msg"></div>
+<script>
+const $=s=>document.querySelector(s);
+const api=async(u,b)=>{const r=await fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:undefined);const j=await r.json().catch(()=>({}));if(!r.ok||j.blad){msg(j.blad||r.statusText);throw new Error(j.blad||r.statusText)}return j};
+const msg=t=>{const m=$('#msg');m.textContent=t;m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',5000)};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct=(a,b)=>b?Math.round(100*a/b):0;
+const fmtT=s=>s?new Date(s*1000).toLocaleString('pl-PL'):'';
+const dur=(a,b)=>{if(!a)return'';const d=((b||Date.now()/1000)-a);return d<90?`${Math.round(d)} s`:d<5400?`${(d/60).toFixed(1)} min`:`${(d/3600).toFixed(1)} h`};
+const ci=m=>m&&m.srednia!=null?`${(100*m.srednia).toFixed(1)} % <span class="muted">[${(100*m.ci_dol).toFixed(0)}–${(100*m.ci_gora).toFixed(0)}]</span>`:'–';
+let TAB='przeglad', SL=null, STATE={krz:null};
+document.querySelector('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(!b)return;TAB=b.dataset.t;document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-selected',x===b));render();});
+const meter=(a,b)=>`<div class="meter"><i style="width:${pct(a,b)}%"></i></div>`;
+
+async function render(){
+  SL=SL||await api('/api/slowniki');
+  const m=$('#main');
+  if(TAB==='przeglad'){
+    const d=await api('/api/przeglad');
+    const u=d.uruchomienia||{};
+    const steps=[
+      ['Zdjęcia w input/',d.zdjecia_w_input,null],
+      ['Krzyżówki przeanalizowane i zaimportowane',d.krzyzowki,d.zdjecia_w_input],
+      ['Ramki opisów odczytane (OCR)',d.ramki_ocr,d.ramki],
+      ['Ramki zweryfikowane ręcznie',d.ramki_zweryfikowane,d.ramki],
+      ['Hasła z odpowiedzią (klucz)',d.hasla_z_odpowiedzia,d.hasla],
+      ['Hasła z kategorią',d.hasla_z_kategoria,d.hasla],
+      ['Hasła gotowe do benchmarku',d.hasla_gotowe,d.hasla],
+      ['Modele aktywne (w tym darmowe)',`${d.modele} (${d.modele_darmowe})`,null],
+      ['Uruchomienia zakończone',u.zakonczone||0,Object.values(u).reduce((a,b)=>a+b,0)],
+    ];
+    m.innerHTML=`<div class="row">
+      <div class="k"><h2>Etapy</h2><ul class="todo" style="padding-left:18px;margin:0">${steps.map(([n,a,b])=>`<li class="${b&&a>=b?'done':'todo-item'}">${n}: <b>${a??'–'}</b>${b?` / ${b}${meter(a,b)}`:''}</li>`).join('')}</ul>
+        <h3>Co dalej</h3><ol style="margin:0;padding-left:18px">
+        <li>Zdjęcia → <span class="mono">python -m krzyzowka.cli input -o output</span> → import (zakładka Dane).</li>
+        <li>OCR opisów przez Claude Code (zakładka OCR), potem korekta ręczna.</li>
+        <li>Odpowiedzi z klucza (ręcznie lub import), kategorie, oznaczenie „gotowe”.</li>
+        <li>Rejestr modeli, kolejka uruchomień, worker.</li></ol></div>
+      <div class="k"><h2>Liczby</h2><div class="row" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">
+        ${[['krzyżówki',d.krzyzowki],['ramki',d.ramki],['hasła',d.hasla],['gotowe',d.hasla_gotowe],['modele',d.modele],['odpowiedzi',d.odpowiedzi],['koszt USD',(d.koszt_usd||0).toFixed(2)]].map(([n,v])=>`<div class="tile"><b>${v}</b><small>${n}</small></div>`).join('')}</div>
+        <h3>Kolejka</h3>${Object.keys(u).length?Object.entries(u).map(([s,n])=>`<span class="st ${s}">${s}: ${n}</span> `).join(''):'<span class="muted">pusto</span>'}
+        <p class="muted">worker: ${d.worker?'<span class="ok">działa</span>':'nie działa'} · OCR: ${d.ocr.trwa?'<span class="ok">trwa</span>':'nie trwa'}</p>
+        <h3>Klucze / połączenia</h3><div class="mono">OPENROUTER_API_KEY: ${d.klucze.OPENROUTER_API_KEY?'<span class="ok">jest</span>':'<span class="bad">brak</span>'} · OLLAMA_API_KEY: ${d.klucze.OLLAMA_API_KEY?'<span class="ok">jest</span>':'brak'} · OLLAMA_HOST: ${esc(d.klucze.OLLAMA_HOST)} · claude: CLI</div>
+        <h3>Gotowe hasła wg kategorii</h3><div class="tw"><table><tbody>${d.kategorie.map(r=>`<tr><td>${esc(r.kategoria)}</td><td class="num">${r.n}</td><td style="width:40%"><div class="bar"><i style="width:${pct(r.n,d.hasla_gotowe||1)}%"></i></div></td></tr>`).join('')}</tbody></table></div>
+        <div class="muted">polskość: ${d.polskosc.map(r=>`${esc(r.polskosc)} ${r.n}`).join(' · ')}</div></div>
+      <div class="k"><h2>Ostatnie zdarzenia</h2><div class="tw"><table><tbody>${d.zdarzenia.map(z=>`<tr><td class="muted mono">${fmtT(z.at)}</td><td><span class="st">${esc(z.typ)}</span></td><td>${esc(z.tresc)}</td></tr>`).join('')}</tbody></table></div></div>
+    </div>`;
+  }
+  if(TAB==='dane'){
+    const ks=await api('/api/krzyzowki');
+    let h=`<div class="k"><div class="form"><button onclick="imp()">Importuj wyniki z output/</button><span class="muted">Importuje output/*/wynik.json; istniejące odpowiedzi i etykiety są zachowywane.</span></div></div>
+    <div class="k"><h2>Krzyżówki</h2><div class="tw"><table><thead><tr><th>Id</th><th>Źródło</th><th class="num">Siatka</th><th class="num">Ramki</th><th class="num">OCR</th><th class="num">Hasła</th><th class="num">Z odpowiedzią</th><th class="num">Gotowe</th><th class="num">Pasek</th><th></th></tr></thead><tbody>
+    ${ks.map(k=>`<tr><td class="mono">${k.id}</td><td>${esc(k.zrodlo||'')}</td><td class="num">${k.wiersze}×${k.kolumny}</td><td class="num">${k.liczba_ramek}</td><td class="num">${k.ocr_gotowe}</td><td class="num">${k.liczba_hasel}</td><td class="num">${k.z_odpowiedzia}</td><td class="num">${k.gotowe}</td><td class="num">${k.pasek_pol??'–'}</td><td><button onclick="hasla('${k.id}')">hasła</button></td></tr>`).join('')}</tbody></table></div></div>
+    <div id="hasla"></div>`;
+    m.innerHTML=h; if(STATE.krz) hasla(STATE.krz);
+  }
+  if(TAB==='ocr'){
+    const s=await api('/api/ocr/stan');
+    m.innerHTML=`<div class="k"><h2>OCR opisów przez Claude Code (claude -p)</h2>
+      <p class="muted">Każdy wycinek ramki jest czytany narzędziem Read, odpowiedź wymuszona schematem JSON. Koszt rozliczany w abonamencie Claude Code. Do odczytu: <b>${s.do_odczytu}</b>. Statusy: ${s.statusy.map(x=>`${x.ocr_status} ${x.n}`).join(' · ')}</p>
+      <div class="form"><label>Model<select id="ocr_model"><option>haiku</option><option>sonnet</option><option>opus</option></select></label>
+      <label>Krzyżówka<select id="ocr_krz"><option value="">wszystkie</option>${Object.entries(s.per_krzyzowka).map(([k,n])=>`<option value="${k}">${k} (${n})</option>`).join('')}</select></label>
+      <label>Limit<input id="ocr_limit" class="short" type="number" placeholder="∞"></label><label>Opóźnienie [s]<input id="ocr_op" class="short" type="number" step="0.1" value="0.5"></label>
+      <button class="p" ${s.trwa?'disabled':''} onclick="ocrStart()">Start</button><button ${s.trwa?'':'disabled'} onclick="api('/api/ocr/stop',{}).then(render)">Stop</button>
+      <span>${s.trwa?'<span class="ok">trwa ('+esc(s.model)+')</span>':(s.wynik?'ostatni wynik: '+esc(JSON.stringify(s.wynik)):'')}</span></div>
+      <h3>Z linii poleceń</h3><pre>python -m bench.ocr lista
+python -m bench.ocr uruchom --model haiku [--krzyzowka IMG_1803] [--limit 50]</pre></div>`;
+    if(s.trwa) setTimeout(()=>TAB==='ocr'&&render(),4000);
+  }
+  if(TAB==='modele'){
+    const ms=await api('/api/modele');
+    m.innerHTML=`<div class="k"><div class="form"><button onclick="api('/api/modele/odswiez',{}).then(r=>{msg(JSON.stringify(r));render()})">Odśwież rejestr (OpenRouter darmowe, Ollama, claude)</button>
+      <label>Dostawca<select id="m_d"><option>ollama</option><option>openrouter</option><option>claude_cli</option></select></label><label>Nazwa<input id="m_n" placeholder="np. qwen3:4b"></label><label>Parametry [mld]<input id="m_p" class="short" type="number" step="0.1"></label><label>Darmowy<input id="m_f" type="checkbox" checked></label>
+      <button onclick="api('/api/modele/dodaj',{dostawca:$('#m_d').value,nazwa:$('#m_n').value,parametry_mld:+$('#m_p').value||null,darmowy:$('#m_f').checked?1:0}).then(render)">Dodaj ręcznie</button></div></div>
+    <div class="k"><div class="tw"><table><thead><tr><th>Aktywny</th><th>Dostawca</th><th>Model</th><th class="num">Parametry [mld]</th><th>Darmowy</th><th class="num">Kontekst</th><th class="num">Uruchomień</th><th>Uwagi</th></tr></thead><tbody>
+    ${ms.map(x=>`<tr><td><input type="checkbox" ${x.aktywny?'checked':''} onchange="api('/api/model/${encodeURIComponent(x.id)}',{aktywny:this.checked?1:0})"></td><td>${x.dostawca}</td><td class="mono">${esc(x.nazwa)}</td><td class="num"><input class="short" type="number" step="0.1" value="${x.parametry_mld??''}" onchange="api('/api/model/${encodeURIComponent(x.id)}',{parametry_mld:+this.value||null})"></td><td>${x.darmowy?'tak':'nie'}</td><td class="num">${x.kontekst??''}</td><td class="num">${x.uruchomien}</td><td class="muted">${esc(x.uwagi||'')}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  if(TAB==='kolejka'){
+    const [ms,us,ks,w]=await Promise.all([api('/api/modele'),api('/api/uruchomienia'),api('/api/krzyzowki'),api('/api/worker')]);
+    const act=ms.filter(x=>x.aktywny);
+    m.innerHTML=`<div class="k"><h2>Nowe uruchomienia</h2><div class="form">
+      <label>Modele (wiele)<select id="q_m" multiple size="6" style="min-width:280px">${act.map(x=>`<option value="${x.id}">${x.dostawca}: ${esc(x.nazwa)}</option>`).join('')}</select></label>
+      <label>Warianty<select id="q_w" multiple size="6">${SL.warianty.map(w=>`<option ${w==='z_dlugoscia'?'selected':''}>${w}</option>`).join('')}</select></label>
+      <label>Krzyżówki<select id="q_k" multiple size="6">${ks.map(k=>`<option value="${k.id}">${k.id} (${k.gotowe})</option>`).join('')}</select></label>
+      <label>Limit haseł<input id="q_l" class="short" type="number" placeholder="∞"></label><label>Ziarno<input id="q_z" class="short" type="number" value="1"></label>
+      <label>Opóźnienie [s]<input id="q_o" class="short" type="number" step="0.5" value="1"></label><label>Temperatura<input id="q_t" class="short" type="number" step="0.1" value="0"></label>
+      <label>Przykłady<input id="q_p" type="checkbox"></label><label>Priorytet<input id="q_pr" class="short" type="number" value="100"></label>
+      <button class="p" onclick="dodajUr()">Dodaj do kolejki</button></div>
+      <p class="muted">Powstaje jedno uruchomienie na każdą parę model × wariant. Worker wykonuje je po kolei (priorytet, potem kolejność), jedno zapytanie naraz z zadanym opóźnieniem; przy 429/5xx ponawia z rosnącym odstępem. Wszystko wznawialne.</p></div>
+    <div class="k"><div class="form"><button class="p" ${w.dziala?'disabled':''} onclick="api('/api/worker/start',{}).then(render)">Uruchom workera (cała kolejka)</button><span class="muted">worker: ${w.dziala?'<span class="ok">działa</span>':'nie działa'}</span></div>
+    <div class="tw"><table><thead><tr><th>Id</th><th>Nazwa</th><th>Status</th><th class="num">Prio</th><th class="num">Postęp</th><th class="num">Błędy</th><th>Start</th><th class="num">Czas</th><th class="num">Tokeny</th><th class="num">Koszt</th><th></th></tr></thead><tbody>
+    ${us.map(u=>`<tr><td class="mono">${u.id}</td><td>${esc(u.nazwa)}</td><td><span class="st ${u.status}">${u.status}</span>${u.blad?`<div class="bad mono" style="font-size:11px;max-width:40ch;white-space:pre-wrap">${esc(u.blad.slice(-200))}</div>`:''}</td>
+      <td class="num"><input class="short" type="number" value="${u.priorytet}" onchange="api('/api/uruchomienie/${u.id}/priorytet',{priorytet:+this.value})"></td>
+      <td class="num">${u.zrobione}/${u.liczba_hasel}${meter(u.zrobione,u.liczba_hasel)}</td><td class="num ${u.bledy?'bad':''}">${u.bledy}</td><td class="muted">${fmtT(u.start_at)}</td><td class="num">${dur(u.start_at,u.koniec_at||(u.status==='trwa'?null:u.start_at))}</td>
+      <td class="num muted">${u.tokeny_wej}/${u.tokeny_wyj}</td><td class="num">${(u.koszt_usd||0).toFixed(3)}</td>
+      <td style="white-space:nowrap">${u.status==='trwa'?`<button onclick="api('/api/uruchomienie/${u.id}/stop',{}).then(render)">Stop</button>`:''}
+        ${['w_kolejce','wstrzymane','blad'].includes(u.status)?`<button onclick="api('/api/uruchomienie/${u.id}/start',{}).then(render)">Start</button>`:''}
+        ${['wstrzymane','blad','zakonczone'].includes(u.status)?`<button onclick="api('/api/uruchomienie/${u.id}/wznow',{}).then(render)">Do kolejki</button>`:''}
+        ${u.bledy?`<button onclick="api('/api/uruchomienie/${u.id}/powtorz_bledy',{}).then(render)">Powtórz błędy</button>`:''}
+        ${u.zrobione?`<button onclick="TAB='wyniki';STATE.run=${u.id};render()">Wyniki</button>`:''}
+        ${u.status!=='trwa'?`<button class="d" onclick="if(this.dataset.c){api('/api/uruchomienie/${u.id}/usun',{}).then(render)}else{this.dataset.c=1;this.textContent='Na pewno?'}">Usuń</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>`;
+    if(us.some(u=>u.status==='trwa')) setTimeout(()=>TAB==='kolejka'&&render(),5000);
+  }
+  if(TAB==='wyniki'){
+    const por=await api('/api/porownanie');
+    let h=`<div class="k"><h2>Porównanie uruchomień</h2><div class="tw"><table><thead><tr><th>Id</th><th>Model</th><th>Wariant</th><th class="num">n</th><th class="num">Trafność ścisła</th><th class="num">Luźna</th><th class="num">Top‑5</th><th class="num">Format</th><th class="num">Długość ok</th><th class="num">Polska</th><th class="num">Świat</th><th class="num">ECE</th><th class="num">Mediana ms</th><th class="num">Koszt</th><th></th></tr></thead><tbody>
+    ${por.map(p=>{const u=p.uruchomienie,mt=p.metryki,pl=p.wg_polskosc||{};return`<tr><td class="mono">${u.id}</td><td class="mono">${esc(u.model_id)}</td><td>${u.wariant}</td><td class="num">${mt.trafnosc.n}</td><td class="num"><b>${ci(mt.trafnosc)}</b></td><td class="num">${ci(mt.trafnosc_luzno)}</td><td class="num">${ci(mt.top5)}</td><td class="num">${ci(mt.format_ok)}</td><td class="num">${ci(mt.dlugosc_ok)}</td><td class="num">${ci(pl.polska)}</td><td class="num">${ci(pl.swiat)}</td><td class="num">${mt.kalibracja.ece??'–'}</td><td class="num">${mt.czas_ms_mediana??''}</td><td class="num">${mt.koszt_usd}</td><td><button onclick="STATE.run=${u.id};render()">Szczegóły</button></td></tr>`}).join('')}</tbody></table></div>
+    <p class="muted">Trafność ścisła: pełna zgodność z kluczem wraz z polskimi znakami. Luźna: po zdjęciu znaków diakrytycznych (pomocniczo). W nawiasach 95 % przedział ufności (bootstrap).</p></div>`;
+    if(STATE.run){
+      const r=await api(`/api/wyniki/${STATE.run}`); const mt=r.metryki;
+      const dim=(name,obj)=>`<h3>${name}</h3><div class="tw"><table><tbody>${Object.entries(obj).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${v.trafnosc.n}</td><td class="num">${ci(v.trafnosc)}</td><td style="width:35%"><div class="bar"><i style="width:${Math.round(100*(v.trafnosc.srednia||0))}%"></i></div></td></tr>`).join('')}</tbody></table></div>`;
+      h+=`<div class="k"><h2>Uruchomienie ${r.uruchomienie.id}: ${esc(r.uruchomienie.nazwa)} <a class="btn" href="/api/wyniki/${r.uruchomienie.id}.csv">CSV</a></h2>
+        <div class="row"><div>${dim('Wg kategorii',mt.wg.kategoria)}${dim('Wg polskości',mt.wg.polskosc)}</div><div>${dim('Wg długości hasła',mt.wg.dlugosc)}${dim('Wg typu opisu',mt.wg.typ_opisu)}
+        <h3>Kalibracja</h3><div class="mono">Brier ${mt.kalibracja.brier??'–'} · ECE ${mt.kalibracja.ece??'–'} · średnia pewność ${mt.kalibracja.srednia_pewnosc??'–'} (n=${mt.kalibracja.n})</div></div></div>
+        <h3>Odpowiedzi</h3><div class="tw"><table><thead><tr><th>Hasło</th><th>Opis</th><th>Klucz</th><th>Odpowiedź</th><th>Kandydaci</th><th class="num">Pewność</th><th>Ścisła</th><th>Luźna</th><th class="num">ms</th><th>Błąd</th></tr></thead><tbody>
+        ${r.odpowiedzi.map(o=>`<tr><td class="mono">${esc(o.haslo_id)}</td><td>${esc(o.opis)}</td><td class="mono">${esc(o.klucz)}</td><td class="mono ${o.poprawna?'ok':(o.poprawna_luzno?'warn':'bad')}">${esc(o.odpowiedz||'')}</td><td class="mono muted">${esc((JSON.parse(o.kandydaci||'[]')).join(', '))}</td><td class="num">${o.pewnosc??''}</td><td>${o.poprawna?'✓':'✗'}</td><td>${o.poprawna_luzno?'✓':'✗'}</td><td class="num">${o.czas_ms??''}</td><td class="bad">${esc((o.blad||'').slice(0,80))}</td></tr>`).join('')}</tbody></table></div></div>`;
+    }
+    m.innerHTML=h;
+  }
+  const w=await api('/api/worker'); $('#worker').textContent=w.dziala?'worker: działa':'worker: zatrzymany';
+}
+async function imp(){const r=await api('/api/import',{katalog:'output'});msg(`zaimportowano ${r.zaimportowano.length} krzyżówek`);render()}
+async function hasla(k){
+  STATE.krz=k; const hs=await api(`/api/hasla?krzyzowka=${encodeURIComponent(k)}`);
+  const sel=(id,opts,v,f)=>`<select onchange="zapisz('${id}',{${f}:this.value||null})"><option value="">–</option>${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+  $('#hasla').innerHTML=`<div class="k"><h2>Hasła: ${k} <button onclick="api('/api/hasla/gotowe',{krzyzowka:'${k}'}).then(r=>{msg('oznaczono gotowe: '+r.zmieniono);hasla('${k}')})">Oznacz gotowe wszystkie z opisem i odpowiedzią</button></h2>
+  <p class="muted">Odpowiedź: wielkie litery z polskimi znakami; długość musi zgadzać się z siatką. Opis można poprawić po OCR.</p>
+  <div class="tw"><table><thead><tr><th>Id</th><th>Wycinek</th><th>Opis</th><th class="num">Dł.</th><th>Kier.</th><th>Odpowiedź</th><th>Kategoria</th><th>Polskość</th><th>Typ opisu</th><th>Gotowe</th></tr></thead><tbody>
+  ${hs.map(h=>`<tr><td class="mono">H${h.nr}</td><td>${h.ramka_id?`<img class="crop" src="/wycinek/${h.ramka_id}" alt="">`:'<span class="bad">brak ramki</span>'}</td>
+    <td><input style="min-width:16em" value="${esc(h.opis||'')}" placeholder="${h.ocr_status==='gotowe'?'':'brak OCR'}" onchange="zapisz('${h.id}',{opis:this.value})"></td>
+    <td class="num">${h.dlugosc}</td><td class="muted">${h.kierunek}</td><td><input class="mono" style="width:11em" value="${esc(h.odpowiedz||'')}" onchange="zapisz('${h.id}',{odpowiedz:this.value})"></td>
+    <td>${sel(h.id,SL.kategorie,h.kategoria,'kategoria')}</td><td>${sel(h.id,SL.polskosc,h.polskosc,'polskosc')}</td><td>${sel(h.id,SL.typy_opisu,h.typ_opisu,'typ_opisu')}</td>
+    <td><input type="checkbox" ${h.gotowe?'checked':''} onchange="zapisz('${h.id}',{gotowe:this.checked?1:0})"></td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#hasla').scrollIntoView({behavior:'smooth'});
+}
+async function zapisz(id,f){try{await api('/api/haslo/'+encodeURIComponent(id),f);msg('zapisano '+id)}catch(e){}}
+async function ocrStart(){await api('/api/ocr/start',{model:$('#ocr_model').value,krzyzowka:$('#ocr_krz').value,limit:$('#ocr_limit').value,opoznienie:$('#ocr_op').value});render()}
+async function dodajUr(){
+  const sv=id=>[...$(id).selectedOptions].map(o=>o.value);
+  const pod={}; if(sv('#q_k').length)pod.krzyzowki=sv('#q_k'); if($('#q_l').value)pod.limit=+$('#q_l').value; pod.ziarno=+$('#q_z').value;
+  const r=await api('/api/uruchomienia',{modele:sv('#q_m'),warianty:sv('#q_w'),podzbior:pod,parametry:{opoznienie_s:+$('#q_o').value,temperatura:+$('#q_t').value,przyklady:$('#q_p').checked},priorytet:+$('#q_pr').value});
+  msg(`dodano ${r.ids.length} uruchomień`); render();
+}
+render();
+</script>
+</body>
+</html>
