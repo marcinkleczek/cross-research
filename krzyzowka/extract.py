@@ -20,6 +20,7 @@ from .digits import find_numbers, assign_numbers
 from .words import build_words
 from .strip import extended_warp, find_strip
 from .debug import render_overlay, render_curves
+from .formats import write_formats
 
 DIR_PL = {"prawo": "poziomo", "dol": "pionowo", "lewo": "poziomo_wstecz", "gora": "pionowo_wstecz"}
 
@@ -165,6 +166,7 @@ def analyze(path: str, out_dir: str, cell: int = 128, save_crops: bool = True) -
             cv2.imwrite(os.path.join(out_dir, "zagadka.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
             entry["plik"] = "zagadka.png"
         result["zagadka"] = entry
+    result["pliki_formatow"] = write_formats(json.loads(json.dumps(result, default=_json_default)), out_dir)
     with open(os.path.join(out_dir, "wynik.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=1, default=_json_default)
     overlay = render_overlay(lat, types, E, boxes, arrows, words, numbers)

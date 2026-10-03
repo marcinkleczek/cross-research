@@ -87,7 +87,9 @@ async function odswiez() {
         <a href="/wyniki/${stem}/naklad.jpg" target="_blank">nakładka</a>
         <a href="/wyniki/${stem}/wynik.json" target="_blank">JSON</a>
         <a href="/wyniki/${stem}/zagadka.png" target="_blank">zagadka</a>
-        <a href="/wyniki/${stem}/pasek.png" target="_blank">pasek</a></div>`;
+        <a href="/wyniki/${stem}/pasek.png" target="_blank">pasek</a>
+        <a href="/wyniki/${stem}/${stem}.jpz" download>.jpz</a>
+        <a href="/wyniki/${stem}/${stem}.ipuz" download>.ipuz</a></div>`;
     }
     li.innerHTML = `<img src="/zdjecia/${encodeURIComponent(p.nazwa)}" loading="lazy" alt="">
       <div class="info"><div>${p.nazwa}</div><small>${p.czas} · ${(p.rozmiar/1e6).toFixed(1)} MB${stan}</small>${odn}</div>

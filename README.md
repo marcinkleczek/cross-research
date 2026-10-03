@@ -42,6 +42,8 @@ Dla każdego zdjęcia powstaje katalog `output/<nazwa>/`:
 | `opisy/opis_NN.png` | wycinek każdej ramki opisu w pełnej rozdzielczości zdjęcia |
 | `zagadka.png` | wycinek obszaru rysunku/zagadki |
 | `pasek.png`, `podpis.png` | pasek rozwiązania i podpis nad nim |
+| `<nazwa>.jpz` | krzyżówka w formacie Crossword Compiler XML (kratki opisów, strzałki, hasła) |
+| `<nazwa>.ipuz` | krzyżówka w otwartym formacie ipuz, rodzaj `crossword/arrowword` |
 
 ### Przebieg
 
@@ -54,6 +56,15 @@ Dla każdego zdjęcia powstaje katalog `output/<nazwa>/`:
 7. **Hasła** – od komórki ze strzałką w jej kierunku, aż do komórki nieliterowej, krawędzi siatki lub separatora falistego.
 8. **Numery kratek** – plamy w prawym dolnym rogu komórek literowych; podobieństwo do cyfr 0–9 z szablonów renderowanych z czcionek bezszeryfowych pogrubionych (Liberation/FreeSans/DejaVu); przypisanie unikatowych wartości 1..N algorytmem węgierskim, gdzie N to liczba pól paska rozwiązania.
 9. **Pasek rozwiązania** – rzędy pól pod siatką (pasma między liniami poziomymi, kreski pionowe), liczba pól, podział na słowa po pogrubionych kreskach.
+
+### Pliki w formatach krzyżówkowych
+
+Dwa rozpowszechnione formaty plików krzyżówek obsługują układ szwedzki (opisy w kratkach, strzałki):
+
+* **`.jpz`** – XML programu Crossword Compiler, schemat [rectangular-puzzle.xsd](https://crossword.info/xml/rectangular-puzzle.xsd) (przestrzeń nazw `http://crossword.info/xml/rectangular-puzzle`). Kratka opisu to `<cell type="clue">` z elementami `<clue word="ID">` (kilka opisów w jednej kratce = przegroda), strzałka to `<arrow from="…" to="…">` w pierwszej kratce hasła: `from` to strona, od której dochodzi (strona ramki opisu), `to` to kierunek hasła; `<word id x="5-9" y="3">` wiąże kratki hasła, zakres malejący oznacza hasło wsteczne. Numery z kratek trafiają do `bottom-right-number`, obszar rysunku to `type="block"`. Plik przechodzi walidację schematem (po zdjęciu przestrzeni nazw z elementów potomnych, bo schemat deklaruje elementy niekwalifikowane, a pliki Crossword Compilera używają domyślnej przestrzeni nazw).
+* **`.ipuz`** – otwarty format JSON ([ipuz.org](https://libipuz.org/ipuz-spec.html), `"version": "http://ipuz.org/v2"`, `"kind": ["http://ipuz.org/crossword/arrowword#1"]`). Siatka w `puzzle` (kratki opisów i rysunku jako bloki `#` z kolorem, numery jako `style.mark.BR`), opisy w `clues.Clues` z `location` i `enumeration`. Szczegóły spoza specyfikacji (kratki hasła, kierunek, ramka opisu, strzałka, zagadka, pasek) są w kluczach rozszerzeń `pl.leanmate.krzyzowka:*`, zgodnie z konwencją ipuz. Plik przechodzi walidację biblioteką `ipuz` (PyPI).
+
+W obu plikach treści opisów są puste (brak OCR), a przy każdym opisie jest odwołanie do wycinka `opisy/opis_NN.png`; litery rozwiązania są nieznane. Po uzupełnieniu treści plik otwiera się w Crossword Compilerze, Crossword Solverze, XWordzie, GNOME Crosswords lub apletach sieciowych.
 
 ### Format `wynik.json`
 

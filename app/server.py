@@ -108,7 +108,8 @@ class Handler(BaseHTTPRequestHandler):
     def _file(self, path: str):
         if not os.path.isfile(path):
             return self._send(404, b"nie ma takiego pliku")
-        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        ctype = {".jpz": "application/xml; charset=utf-8", ".ipuz": "application/json; charset=utf-8"}.get(
+            os.path.splitext(path)[1].lower()) or mimetypes.guess_type(path)[0] or "application/octet-stream"
         with open(path, "rb") as f:
             data = f.read()
         self._send(200, data, ctype)
