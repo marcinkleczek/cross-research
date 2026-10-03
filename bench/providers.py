@@ -132,19 +132,28 @@ class OpenRouter:
     def generate(self, model: str, system: str, user: str, schema: dict | None = None, temperature: float = 0.0, max_tokens: int = 300, seed: int = 7) -> dict:
         if not self.key:
             return {"text": None, "parsed": None, "usage": {}, "koszt_usd": 0.0, "czas_ms": 0, "surowe": None, "blad": "brak OPENROUTER_API_KEY"}
+        # modele rozumujące zużywają limit na "myślenie" i zwracają pustą treść: najniższy wysiłek i duży zapas tokenów
         payload = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                   "temperature": temperature, "max_tokens": max_tokens, "seed": seed, "usage": {"include": True}}
+                   "temperature": temperature, "max_tokens": max(max_tokens, 4000), "seed": seed, "usage": {"include": True},
+                   "reasoning": {"effort": "low"}}
         if schema:
             payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "odpowiedz", "strict": True, "schema": schema}}
         headers = {"Authorization": f"Bearer {self.key}", "HTTP-Referer": "https://github.com/marcinkleczek/cross-research", "X-Title": "krzyzowki-benchmark"}
         t = time.time()
-        status, data = _with_retry(lambda: _post_json(self.URL + "/chat/completions", payload, headers))
+
+        def call():
+            st, d = _post_json(self.URL + "/chat/completions", payload, headers)
+            if st == 200 and isinstance(d, dict) and "choices" not in d:
+                st = 503  # OpenRouter zwraca 200 z polem error przy przeciążeniu dostawcy: traktujemy jak 5xx
+            return st, d
+
+        status, data = _with_retry(call)
         ms = int((time.time() - t) * 1000)
         if status != 200 or not isinstance(data, dict) or "choices" not in data:
-            # część darmowych modeli nie obsługuje response_format: ponawiamy bez schematu
-            if schema and status == 400:
-                payload.pop("response_format", None)
-                status, data = _with_retry(lambda: _post_json(self.URL + "/chat/completions", payload, headers))
+            # część darmowych modeli nie obsługuje response_format lub pola reasoning: ponawiamy bez nich
+            if status == 400:
+                payload.pop("response_format", None); payload.pop("reasoning", None)
+                status, data = _with_retry(call)
                 ms = int((time.time() - t) * 1000)
             if status != 200 or not isinstance(data, dict) or "choices" not in data:
                 return {"text": None, "parsed": None, "usage": {}, "koszt_usd": 0.0, "czas_ms": ms, "surowe": data, "blad": f"HTTP {status}: {str(data)[:300]}"}
