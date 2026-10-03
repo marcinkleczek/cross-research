@@ -25,6 +25,9 @@ Zależności: `numpy`, `opencv-python-headless` (klasyczne przetwarzanie obrazu)
 | `scripts/pulpit.sh [port]`, `scripts/wgrywanie.sh [port]`, `scripts/worker.sh [id]` | pojedyncze procesy na pierwszym planie |
 | `scripts/ocr.sh lista` / `scripts/ocr.sh uruchom --model sonnet` | OCR ramek przez Claude Code |
 | `scripts/analizuj.sh [zdjęcie…]` | ekstrakcja i import nowych zdjęć |
+| `scripts/scal.sh inna.sqlite` | scala wyniki z kopii bazy, na której pracował worker na innej maszynie |
+
+Praca na dwóch maszynach: obie startują z tej samej `bench.sqlite` z repozytorium, każda uruchamia workera innego dostawcy (np. `scripts/worker.sh claude_cli` u siebie, pozostali gdzie indziej), a potem jedna strona scala bazę drugiej (`scripts/scal.sh`). Jedno uruchomienie nie może być przetwarzane w dwóch kopiach naraz.
 
 Każdy skrypt wczytuje `.env` i ustawia `BENCH_DB` na `bench.sqlite` w katalogu projektu.
 
@@ -134,7 +137,7 @@ Klucze: skopiuj `.env.example` do `.env` i uzupełnij `OPENROUTER_API_KEY`, `OLL
 
 **Ocena**: ścisła = pełna zgodność z kluczem wraz z polskimi znakami (Ł ≠ L); luźna (pomocnicza) = po zdjęciu diakrytyki; top‑5 z listy kandydatów; zgodność długości i wzorca; poprawność formatu; kalibracja (Brier, ECE) z deklarowanej pewności; czas, tokeny, koszt. Agregaty z 95 % przedziałami ufności (bootstrap) wg kategorii, polskości, długości, typu opisu i krzyżówki.
 
-**Dostawcy**: `ollama` (`/api/chat`, `format` = schemat), `openrouter` (zgodny z OpenAI, `response_format` ze schematem, awaryjnie bez), `claude_cli` (`claude -p --model … --json-schema …`, bez narzędzi, jedna tura; rozliczane w abonamencie Claude Code). Każdy błąd 429/5xx jest ponawiany z rosnącym odstępem; wszystkie uruchomienia są wznawialne (odpowiedzi zapisane nie są powtarzane).
+**Dostawcy**: `ollama` (chmura lub serwer z `OLLAMA_HOST`), `ollama_local` (lokalny serwer z `OLLAMA_LOCAL_HOST`, bez klucza i limitów; działa równolegle z chmurą), `openrouter` (zgodny z OpenAI, `response_format` ze schematem, awaryjnie bez), `claude_cli` (`claude -p --model … --json-schema …`, bez narzędzi, jedna tura; rozliczane w abonamencie Claude Code). Każdy błąd 429/5xx jest ponawiany z rosnącym odstępem; wszystkie uruchomienia są wznawialne (odpowiedzi zapisane nie są powtarzane).
 
 Do benchmarku trafiają wyłącznie hasła z flagą `gotowe=1` (opis zweryfikowany, odpowiedź z klucza). `bench/probka.py` ustawia kilkadziesiąt odpowiedzi ręcznych (`zrodlo_odpowiedzi='probka_reczna'`) wyłącznie do testu potoku.
 

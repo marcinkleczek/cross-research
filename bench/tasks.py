@@ -161,8 +161,24 @@ def parse_text(text: str | None, n: int | None = None) -> dict | None:
     return {"odpowiedz": first, "kandydaci": cands, "pewnosc": None}
 
 
+def accepted(haslo: dict) -> set[str]:
+    """Zbiór poprawnych odpowiedzi: klucz plus alternatywy (dwa hasła bywają poprawne, gdy litery krzyżujące ich nie wykluczają)."""
+    out = {normalize(haslo["odpowiedz"])}
+    alt = haslo.get("alternatywy")
+    if isinstance(alt, str):
+        try:
+            alt = json.loads(alt)
+        except json.JSONDecodeError:
+            alt = [a for a in alt.split("|") if a.strip()]
+    for a in alt or []:
+        if normalize(a):
+            out.add(normalize(a))
+    return out
+
+
 def score(haslo: dict, parsed: dict | None, text: str | None, extra: dict) -> dict:
     ans = normalize(haslo["odpowiedz"])
+    acc = accepted(haslo)
     out = {"format_ok": 0, "odpowiedz": None, "kandydaci": None, "pewnosc": None, "poprawna": 0, "poprawna_luzno": 0, "w_top5": 0, "dlugosc_ok": None, "wzorzec_ok": None}
     if isinstance(parsed, dict) and isinstance(parsed.get("odpowiedz"), str):
         out["format_ok"] = 1
@@ -187,9 +203,9 @@ def score(haslo: dict, parsed: dict | None, text: str | None, extra: dict) -> di
     if a and a not in cl:
         cl = [a] + cl[:4]
     out["kandydaci"] = cl
-    out["poprawna"] = int(a == ans)
-    out["poprawna_luzno"] = int(strip_diacritics(a) == strip_diacritics(ans))
-    out["w_top5"] = int(ans in cl)
+    out["poprawna"] = int(a in acc)
+    out["poprawna_luzno"] = int(strip_diacritics(a) in {strip_diacritics(x) for x in acc})
+    out["w_top5"] = int(any(c in acc for c in cl))
     out["dlugosc_ok"] = int(len(a) == len(ans))
     if "wzorzec" in extra:
         pat = extra["wzorzec"].split(" ")

@@ -53,6 +53,17 @@ def refresh_models(con) -> dict:
         info["ollama"] = "ok"
     except Exception as e:  # noqa: BLE001
         info["ollama"] = f"błąd: {e}"
+    try:
+        for m in providers.OllamaLocal().list_models():
+            p = m.get("parametry")
+            try:
+                pm = float(str(p).upper().rstrip("B")) if p else None
+            except ValueError:
+                pm = None
+            upsert("ollama_local", m["nazwa"], parametry_mld=pm, darmowy=1, uwagi="Ollama lokalnie (bez limitów)")
+        info["ollama_local"] = "ok"
+    except Exception as e:  # noqa: BLE001
+        info["ollama_local"] = f"brak lokalnego serwera: {e}"
     for m in providers.ClaudeCLI().list_models():
         upsert("claude_cli", m["nazwa"], darmowy=1, uwagi="Claude Code CLI, w ramach abonamentu (nie 'mały' model; punkt odniesienia)")
     info["claude_cli"] = "ok"

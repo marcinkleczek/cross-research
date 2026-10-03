@@ -15,6 +15,14 @@
   .form .cds--select-input[multiple] { min-width: 16rem; }
   .form .short { width: 6rem; }
   .pre-wrap { white-space: pre-wrap; }
+  .grid-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+  .grid-wrap img { display: block; max-width: 100%; height: auto; }
+  .grid-ov { position: absolute; inset: 0; display: grid; }
+  .grid-ov span { display: flex; align-items: center; justify-content: center; font-family: var(--cds-font-sans); font-weight: 600; font-size: clamp(9px, 2.1vmin, 22px); line-height: 1; color: #0b3d1a; text-shadow: 0 0 3px #fff, 0 0 3px #fff; border: 1px solid transparent; }
+  .grid-ov span.k { background: rgba(218,30,40,.28); border-color: #da1e28; color: #750e13; }
+  .grid-ov span.s { color: #8e6a00; } .grid-ov span.z { color: #0e6027; } .grid-ov span.kl { color: #161616; background: rgba(36,161,72,.18); }
+  .grid-ov span.sel { outline: 2px solid #0043ce; outline-offset: -2px; }
+  .w-list tr.sel td { background: var(--cds-notification-info-bg) !important; }
   .crop { height: 2.75rem; width: auto; background: #fff; border: 1px solid var(--cds-border-subtle-01); display: block; }
   .kat td:first-child { width: 14rem; }
   @media (max-width: 40rem) { .cds--header__global { display: none; } }
@@ -26,6 +34,7 @@
   <nav class="cds--header__nav" id="nav" aria-label="Sekcje">
     <button data-t="przeglad" aria-selected="true">Przegląd</button>
     <button data-t="dane">Dane</button>
+    <button data-t="weryfikacja">Weryfikacja</button>
     <button data-t="ocr">OCR</button>
     <button data-t="modele">Modele</button>
     <button data-t="kolejka">Kolejka</button>
@@ -102,6 +111,21 @@ async function render(){
     <div id="hasla"></div></div>`;
     if(STATE.krz) hasla(STATE.krz);
   }
+  if(TAB==='weryfikacja'){
+    const ks=await api('/api/krzyzowki'); const st=await api('/api/propozycje/stan');
+    STATE.wer=STATE.wer||ks[0].id;
+    m.innerHTML=`<div class="cds--stack">
+      <section class="cds--tile"><div class="cds--row" style="align-items:end;gap:1rem">
+        <label class="cds--form-item"><span class="cds--label">Krzyżówka</span><select id="w_k" class="cds--select-input" onchange="STATE.wer=this.value;render()">${ks.map(k=>`<option value="${k.id}" ${k.id===STATE.wer?'selected':''}>${k.id} · OCR ${k.ocr_gotowe}/${k.liczba_ramek} · klucz ${k.z_odpowiedzia}/${k.liczba_hasel}</option>`).join('')}</select></label>
+        <label class="cds--form-item"><span class="cds--label">Modele do propozycji (po przecinku)</span><input id="w_m" class="cds--text-input" style="min-width:34rem" value="ollama:gemma4:31b,ollama:gpt-oss:120b,claude_cli:sonnet"></label>
+        <div class="cds--btn-set"><button class="cds--btn" ${st.trwa?'disabled':''} onclick="api('/api/propozycje/start',{modele:$('#w_m').value.split(',').map(x=>x.trim()).filter(Boolean),krzyzowka:$('#w_k').value}).then(render)">Zbierz propozycje (ta krzyżówka)</button>
+        <button class="cds--btn cds--btn--secondary" ${st.trwa?'disabled':''} onclick="api('/api/propozycje/start',{modele:$('#w_m').value.split(',').map(x=>x.trim()).filter(Boolean)}).then(render)">Zbierz dla wszystkich</button>
+        <button class="cds--btn cds--btn--ghost" ${st.trwa?'':'disabled'} onclick="api('/api/propozycje/stop',{}).then(render)">Stop</button></div></div>
+        <p class="cds--type-helper-text-01">${st.trwa?'<span class="cds--success">zbieranie trwa: '+esc((st.modele||[]).join(', '))+'</span> · ':''}propozycji w bazie: ${st.wg_modelu.map(x=>`${esc(x.model_id)} ${x.n}`).join(' · ')||'brak'} · haseł z opisem: ${st.hasla_z_opisem}</p></section>
+      <div id="w_body"></div></div>`;
+    weryfikacja(STATE.wer);
+    if(st.trwa) setTimeout(()=>TAB==='weryfikacja'&&render(),10000);
+  }
   if(TAB==='ocr'){
     const s=await api('/api/ocr/stan');
     m.innerHTML=`<section class="cds--tile"><h2 class="cds--type-heading-03">OCR opisów przez Claude Code (claude -p)</h2>
@@ -123,14 +147,14 @@ python -m bench.ocr uruchom --model sonnet [--krzyzowka IMG_1803] [--limit 50]</
     const ms=await api('/api/modele');
     m.innerHTML=`<div class="cds--stack">
       <div class="cds--row form"><button class="cds--btn cds--btn--tertiary" onclick="api('/api/modele/odswiez',{}).then(r=>{msg(JSON.stringify(r));render()})">Odśwież rejestr (OpenRouter darmowe, Ollama, claude)</button>
-      <label class="cds--form-item"><span class="cds--label">Dostawca</span><select id="m_d" class="cds--select-input"><option>ollama</option><option>openrouter</option><option>claude_cli</option></select></label>
+      <label class="cds--form-item"><span class="cds--label">Dostawca</span><select id="m_d" class="cds--select-input"><option>ollama</option><option>ollama_local</option><option>openrouter</option><option>claude_cli</option></select></label>
       <label class="cds--form-item"><span class="cds--label">Nazwa</span><input id="m_n" class="cds--text-input" placeholder="np. qwen3:4b"></label>
       <label class="cds--form-item"><span class="cds--label">Parametry [mld]</span><input id="m_p" class="cds--text-input short" type="number" step="0.1"></label>
       <label class="cds--form-item"><span class="cds--label">Darmowy</span><input id="m_f" class="cds--checkbox" type="checkbox" checked style="height:2.5rem"></label>
       <button class="cds--btn cds--btn--secondary" onclick="api('/api/modele/dodaj',{dostawca:$('#m_d').value,nazwa:$('#m_n').value,parametry_mld:+$('#m_p').value||null,darmowy:$('#m_f').checked?1:0}).then(render)">Dodaj ręcznie</button></div>
     <p class="cds--type-helper-text-01" style="max-width:90ch">„Pełny przebieg” to szacunek dla 30 tys. zapytań (6 tys. haseł × 5 wariantów) przy 300 tokenach wejścia i 80 wyjścia na zapytanie. Modele płatne są dodane jako nieaktywne; włącz je tu, gdy zdecydujesz o budżecie.</p>
     ${T(`<th>Aktywny</th><th>Dostawca</th><th>Model</th><th class="cds--num">Parametry [mld]</th><th>Darmowy</th><th class="cds--num">$/M wej</th><th class="cds--num">$/M wyj</th><th class="cds--num">Pełny przebieg</th><th class="cds--num">Uruchomień</th><th>Uwagi</th>`,
-      ms.map(x=>`<tr class="${x.aktywny?(x.uruchomien?'cds--row--ok':'cds--row--warn'):''}"><td><input type="checkbox" class="cds--checkbox" ${x.aktywny?'checked':''} onchange="api('/api/model/${encodeURIComponent(x.id)}',{aktywny:this.checked?1:0})"></td><td>${tag(x.dostawca,{ollama:'teal',openrouter:'purple',claude_cli:'green'}[x.dostawca])}</td><td class="cds--mono cds--key">${esc(x.nazwa)}</td><td class="cds--num"><input class="cds--text-input cds--text-input--sm short" type="number" step="0.1" value="${x.parametry_mld??''}" onchange="api('/api/model/${encodeURIComponent(x.id)}',{parametry_mld:+this.value||null})"></td><td>${x.darmowy?tag('darmowy','green'):tag('płatny','yellow')}</td><td class="cds--num">${x.cena_wej!=null?(1e6*x.cena_wej).toFixed(2):''}</td><td class="cds--num">${x.cena_wyj!=null?(1e6*x.cena_wyj).toFixed(2):''}</td><td class="cds--num">${x.cena_wej!=null?('$'+(30000*(300*x.cena_wej+80*x.cena_wyj)).toFixed(2)):''}</td><td class="cds--num">${x.uruchomien}</td><td class="cds--muted">${esc(x.uwagi||'')}</td></tr>`).join(''),'cds--data-table--compact')}</div>`;
+      ms.map(x=>`<tr class="${x.aktywny?(x.uruchomien?'cds--row--ok':'cds--row--warn'):''}"><td><input type="checkbox" class="cds--checkbox" ${x.aktywny?'checked':''} onchange="api('/api/model/${encodeURIComponent(x.id)}',{aktywny:this.checked?1:0})"></td><td>${tag(x.dostawca,{ollama:'teal',ollama_local:'teal',openrouter:'purple',claude_cli:'green'}[x.dostawca])}</td><td class="cds--mono cds--key">${esc(x.nazwa)}</td><td class="cds--num"><input class="cds--text-input cds--text-input--sm short" type="number" step="0.1" value="${x.parametry_mld??''}" onchange="api('/api/model/${encodeURIComponent(x.id)}',{parametry_mld:+this.value||null})"></td><td>${x.darmowy?tag('darmowy','green'):tag('płatny','yellow')}</td><td class="cds--num">${x.cena_wej!=null?(1e6*x.cena_wej).toFixed(2):''}</td><td class="cds--num">${x.cena_wyj!=null?(1e6*x.cena_wyj).toFixed(2):''}</td><td class="cds--num">${x.cena_wej!=null?('$'+(30000*(300*x.cena_wej+80*x.cena_wyj)).toFixed(2)):''}</td><td class="cds--num">${x.uruchomien}</td><td class="cds--muted">${esc(x.uwagi||'')}</td></tr>`).join(''),'cds--data-table--compact')}</div>`;
   }
   if(TAB==='kolejka'){
     const [ms,us,ks,w]=await Promise.all([api('/api/modele'),api('/api/uruchomienia'),api('/api/krzyzowki'),api('/api/worker')]);
@@ -166,7 +190,7 @@ python -m bench.ocr uruchom --model sonnet [--krzyzowka IMG_1803] [--limit 50]</
   if(TAB==='pokrycie'){
     const mx=await api('/api/macierz');
     const cell=c=>{if(!c)return'<span class="cds--cell-state cds--cell-state--brak">brak</span>';const t=c.trafnosc!=null?`${(100*c.trafnosc).toFixed(0)} %`:'';if(c.status==='zakonczone')return`<span class="cds--cell-state cds--cell-state--zakonczone" title="uruchomienie ${c.id}">${t}</span>`;return`<span class="cds--cell-state cds--cell-state--${c.status}" title="uruchomienie ${c.id}">${c.status==='trwa'?'trwa ':c.status==='w_kolejce'?'kolejka ':c.status+' '}${c.zrobione}/${c.liczba}${c.bledy?' ✗'+c.bledy:''}</span>`};
-    const rows=mx.modele.map(r=>`<tr class="${r.model.aktywny?'':'cds--row--bad'}"><td class="cds--mono cds--key">${tag(r.model.dostawca,{ollama:'teal',openrouter:'purple',claude_cli:'green'}[r.model.dostawca])} ${esc(r.model.nazwa)}${r.model.darmowy?'':' '+tag('płatny','yellow')}${r.model.aktywny?'':' '+tag('nieaktywny','red')}</td>${mx.warianty.map(w=>`<td>${cell(r.warianty[w])}</td>`).join('')}</tr>`).join('');
+    const rows=mx.modele.map(r=>`<tr class="${r.model.aktywny?'':'cds--row--bad'}"><td class="cds--mono cds--key">${tag(r.model.dostawca,{ollama:'teal',ollama_local:'teal',openrouter:'purple',claude_cli:'green'}[r.model.dostawca])} ${esc(r.model.nazwa)}${r.model.darmowy?'':' '+tag('płatny','yellow')}${r.model.aktywny?'':' '+tag('nieaktywny','red')}</td>${mx.warianty.map(w=>`<td>${cell(r.warianty[w])}</td>`).join('')}</tr>`).join('');
     const brak=mx.modele.filter(r=>r.model.aktywny&&r.model.darmowy).reduce((a,r)=>a+mx.warianty.filter(w=>!r.warianty[w]).length,0);
     m.innerHTML=`<div class="cds--stack"><section class="cds--tile"><div class="cds--row" style="justify-content:space-between;align-items:center"><h2 class="cds--type-heading-03" style="margin:0">Pokrycie: modele × warianty</h2>
       <div class="cds--btn-set cds--btn-set--spaced"><button class="cds--btn" onclick="api('/api/uruchomienia/brakujace',{darmowe:true}).then(r=>{msg('dodano '+r.ids.length+' uruchomień');render()})">Uruchom wszystkie brakujące (darmowe): ${brak}</button><button class="cds--btn cds--btn--secondary" onclick="api('/api/worker/start',{}).then(r=>{msg(r.uruchomiono?'worker uruchomiony':'worker już działa');render()})">Uruchom workera</button></div></div>
@@ -193,6 +217,39 @@ python -m bench.ocr uruchom --model sonnet [--krzyzowka IMG_1803] [--limit 50]</
     m.innerHTML=h+'</div>';
   }
   const w=await api('/api/worker'); $('#worker').textContent=w.dziala?'worker: działa':'worker: zatrzymany';
+}
+let WER=null;
+async function weryfikacja(k){
+  const r=await api(`/api/weryfikacja?krzyzowka=${encodeURIComponent(k)}`); WER=r;
+  const R=r.siatka.wiersze,C=r.siatka.kolumny;
+  const numAt={}; for(const [n,v] of Object.entries(r.numery||{})) numAt[v.wiersz+','+v.kolumna]=n;
+  const stanH={}; for(const h of r.hasla) for(const c of h.litery) { const key=c[0]+','+c[1]; const s=h.stan; stanH[key]=(stanH[key]==='konflikt'||s==='konflikt')?'konflikt':(stanH[key]==='klucz'||s==='klucz')?'klucz':(stanH[key]==='pewne'||s==='pewne')?'pewne':s; }
+  let cells=''; for(let i=0;i<R;i++) for(let j=0;j<C;j++){ const key=i+','+j; const L=r.litery[key]||''; const konf=r.konflikty[key]; const cls=konf?'k':(stanH[key]==='klucz'?'kl':stanH[key]==='pewne'?'z':stanH[key]==='slabe'?'s':''); cells+=`<span class="${cls}" data-c="${key}" title="${konf?('konflikt: '+Object.entries(konf).map(([l,hs])=>l+' ('+hs.map(x=>x.split('/')[1]).join(',')+')').join(' / ')):''}">${L}</span>`; }
+  const licz={}; for(const h of r.hasla) licz[h.stan]=(licz[h.stan]||0)+1;
+  const stanTag=s=>({klucz:tag('klucz','green'),pewne:tag('pewne','teal'),slabe:tag('słabe','yellow'),konflikt:tag('konflikt','red'),brak:tag('brak','')}[s]||tag(s));
+  $('#w_body').innerHTML=`<div class="cds--grid" style="grid-template-columns:minmax(18rem,34rem) minmax(0,1fr);gap:1rem">
+    <section class="cds--tile"><h2 class="cds--type-heading-03">${k}: wypełnienie wg propozycji</h2>
+      <div class="grid-wrap"><img src="/siatka/${k}.jpg" alt="siatka ${k}" width="${C*r.bok}" height="${R*r.bok}"><div class="grid-ov" style="grid-template-columns:repeat(${C},1fr);grid-template-rows:repeat(${R},1fr)">${cells}</div></div>
+      <p class="cds--legend"><span><i style="background:rgba(36,161,72,.4)"></i>z klucza</span><span><i style="background:#24a148"></i>pewne (≥2 modele zgodne, bez konfliktu)</span><span><i style="background:#f1c21b"></i>słabe (1 model)</span><span><i style="background:rgba(218,30,40,.5)"></i>konflikt liter na skrzyżowaniu</span></p>
+      <p class="cds--type-helper-text-01">Modele: ${r.modele.map(esc).join(', ')||'brak propozycji – użyj „Zbierz propozycje”'}. Wagi (trafność na próbce): ${Object.entries(r.wagi).map(([m,w])=>`${esc(m)} ${(100*w).toFixed(0)} %`).join(', ')||'domyślne 0,5'}. Hasła: ${Object.entries(licz).map(([s,n])=>`${s} ${n}`).join(' · ')}.</p></section>
+    <section class="cds--tile"><div class="cds--row" style="justify-content:space-between;align-items:center"><h2 class="cds--type-heading-03" style="margin:0">Hasła</h2>
+      <div class="cds--btn-set cds--btn-set--spaced"><button class="cds--btn cds--btn--sm" onclick="zatwierdz('pewne')">Zatwierdź wszystkie „pewne”</button><button class="cds--btn cds--btn--secondary cds--btn--sm" onclick="zatwierdz('zaznaczone')">Zatwierdź zaznaczone</button></div></div>
+      <p class="cds--type-helper-text-01">Propozycję można poprawić w polu; alternatywy (też poprawne, gdy litery krzyżujące nie wykluczają) rozdziel pionową kreską. Zatwierdzenie wpisuje odpowiedź do klucza i oznacza hasło jako gotowe.</p>
+      ${T(`<th></th><th class="cds--key">Hasło</th><th>Opis</th><th>Stan</th><th>Propozycja</th><th>Alternatywy</th><th>Inne kandydatury (wynik · głosy)</th>`,
+        r.hasla.map(h=>`<tr class="cds--row--${{klucz:'ok',pewne:'ok',slabe:'warn',konflikt:'bad',brak:'bad'}[h.stan]}" data-h="${h.haslo_id}" onmouseenter="podswietl('${h.haslo_id}')">
+          <td><input type="checkbox" class="cds--checkbox w-chk" data-h="${h.haslo_id}" ${h.stan==='pewne'?'checked':''}></td>
+          <td class="cds--mono cds--key">H${h.nr} <span class="cds--text-helper">${h.dlugosc} ${h.kierunek==='poziomo'?'→':h.kierunek==='pionowo'?'↓':h.kierunek}</span></td>
+          <td style="max-width:16rem;white-space:normal">${esc(h.opis||'')}</td><td>${stanTag(h.stan)}${h.konflikty.length?`<div class="cds--type-helper-text-01">kratki ${h.konflikty.map(c=>'w'+c[0]+'k'+c[1]).join(', ')}</div>`:''}</td>
+          <td><input class="cds--text-input cds--text-input--sm cds--text-input--mono w-odp" data-h="${h.haslo_id}" style="width:10em" value="${esc(h.klucz||h.propozycja||'')}" maxlength="${h.dlugosc}"></td>
+          <td><input class="cds--text-input cds--text-input--sm cds--text-input--mono w-alt" data-h="${h.haslo_id}" style="width:10em" value="${esc(h.alternatywy?JSON.parse(h.alternatywy).join('|'):h.alternatywy_sugerowane.join('|'))}" placeholder="A|B"></td>
+          <td class="cds--mono" style="font-size:.72rem;white-space:normal">${h.kandydaci.slice(0,5).map(c=>`<span class="cds--tag ${c.slowo===h.propozycja?'cds--tag--green':''}" title="${esc(c.glosy.join(', '))}" style="cursor:pointer" onclick="ustawOdp('${h.haslo_id}','${c.slowo}')">${c.slowo} ${c.wynik}${c.glosy.length?' · '+c.glosy.length:''}</span>`).join(' ')}</td></tr>`).join(''),'cds--data-table--compact w-list')}</section></div>`;
+}
+function podswietl(hid){const h=WER.hasla.find(x=>x.haslo_id===hid); document.querySelectorAll('.grid-ov span.sel').forEach(e=>e.classList.remove('sel')); document.querySelectorAll('.w-list tr.sel').forEach(e=>e.classList.remove('sel')); if(!h)return; for(const c of h.litery){const e=document.querySelector(`.grid-ov span[data-c="${c[0]},${c[1]}"]`); if(e)e.classList.add('sel');} const tr=document.querySelector(`.w-list tr[data-h="${hid}"]`); if(tr)tr.classList.add('sel');}
+function ustawOdp(hid,w){const i=document.querySelector(`.w-odp[data-h="${hid}"]`); if(i)i.value=w;}
+async function zatwierdz(tryb){
+  const items=[]; for(const chk of document.querySelectorAll('.w-chk')){const hid=chk.dataset.h; const h=WER.hasla.find(x=>x.haslo_id===hid); const odp=document.querySelector(`.w-odp[data-h="${hid}"]`).value.trim(); const alt=document.querySelector(`.w-alt[data-h="${hid}"]`).value.split('|').map(x=>x.trim()).filter(Boolean);
+    if(tryb==='pewne'&&h.stan!=='pewne')continue; if(tryb==='zaznaczone'&&!chk.checked)continue; if(!odp)continue; items.push({id:hid,odpowiedz:odp,alternatywy:alt});}
+  const r=await api('/api/weryfikacja/zatwierdz',{hasla:items}); msg(`zatwierdzono ${r.zatwierdzono} haseł`); weryfikacja(STATE.wer);
 }
 async function imp(){const r=await api('/api/import',{katalog:'output'});msg(`zaimportowano ${r.zaimportowano.length} krzyżówek`);render()}
 async function hasla(k){

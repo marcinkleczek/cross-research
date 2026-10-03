@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import time
+import http.client
 import urllib.error
 import urllib.request
 
@@ -31,8 +32,11 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: int = 300) -> tu
             return e.code, json.loads(body)
         except json.JSONDecodeError:
             return e.code, body
-    except (urllib.error.URLError, TimeoutError) as e:
-        return 0, str(e)
+    except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, OSError) as e:
+        # urwany strumień (IncompleteRead), zerwane połączenie, przekroczony czas: traktujemy jak chwilową awarię
+        return 0, f"{type(e).__name__}: {e}"
+    except json.JSONDecodeError as e:
+        return 0, f"niepoprawny JSON w odpowiedzi: {e}"
 
 
 def _with_retry(fn, max_tries: int = 4, base: float = 10.0):
@@ -201,7 +205,16 @@ class ClaudeCLI:
                 "koszt_usd": float(d.get("total_cost_usd") or 0), "czas_ms": ms, "surowe": {k: d.get(k) for k in ("modelUsage", "usage", "duration_api_ms", "stop_reason", "num_turns")}, "blad": None}
 
 
-PROVIDERS = {"ollama": Ollama, "openrouter": OpenRouter, "claude_cli": ClaudeCLI}
+class OllamaLocal(Ollama):
+    """Lokalny serwer Ollama (OLLAMA_LOCAL_HOST, domyślnie http://127.0.0.1:11434), bez klucza; działa równolegle z chmurą."""
+    name = "ollama_local"
+
+    def __init__(self):
+        super().__init__(host=os.environ.get("OLLAMA_LOCAL_HOST") or "http://127.0.0.1:11434", api_key="")
+        self.key = None
+
+
+PROVIDERS = {"ollama": Ollama, "ollama_local": OllamaLocal, "openrouter": OpenRouter, "claude_cli": ClaudeCLI}
 
 
 def get(name: str):
