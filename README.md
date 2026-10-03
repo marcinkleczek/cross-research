@@ -14,6 +14,20 @@ pip install -r requirements.txt
 
 Zależności: `numpy`, `opencv-python-headless` (klasyczne przetwarzanie obrazu), `Pillow` (EXIF, rendering szablonów cyfr z czcionek systemowych), `scipy` (algorytm węgierski).
 
+## Skrypty startowe (`scripts/`)
+
+| skrypt | działanie |
+|---|---|
+| `scripts/instaluj.sh` | jednorazowo: `.venv`, zależności, szablon `.env`, ekstrakcja ze zdjęć, import do bazy |
+| `scripts/start.sh` | w tle: pulpit (8010), serwer wgrywania (8000), worker kolejki; dzienniki w `logi/` (`BEZ_WORKERA=1` pomija workera, `PULPIT_PORT`, `WGRYWANIE_PORT` zmieniają porty) |
+| `scripts/stop.sh` | zatrzymuje procesy ze `start.sh` |
+| `scripts/stan.sh` | procesy, kolejka, lista braków |
+| `scripts/pulpit.sh [port]`, `scripts/wgrywanie.sh [port]`, `scripts/worker.sh [id]` | pojedyncze procesy na pierwszym planie |
+| `scripts/ocr.sh lista` / `scripts/ocr.sh uruchom --model sonnet` | OCR ramek przez Claude Code |
+| `scripts/analizuj.sh [zdjęcie…]` | ekstrakcja i import nowych zdjęć |
+
+Każdy skrypt wczytuje `.env` i ustawia `BENCH_DB` na `bench.sqlite` w katalogu projektu.
+
 ## Etap 1 – wgrywanie zdjęć z telefonu
 
 ```bash

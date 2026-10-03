@@ -136,10 +136,11 @@ pre.cds--snippet { font-family: var(--cds-font-mono); font-size: .75rem; line-he
 .cds--header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; display: flex; align-items: center; height: 3rem; background: var(--cds-shell-header-bg); color: var(--cds-shell-header-fg); border-bottom: 1px solid rgba(255,255,255,.12); padding-inline: 1rem 0; gap: 0; }
 .cds--header__name { font-size: .875rem; font-weight: 600; letter-spacing: .1px; color: var(--cds-shell-header-fg); padding-right: 2rem; white-space: nowrap; }
 .cds--header__name span { font-weight: 400; margin-right: .25rem; }
-.cds--header__nav { display: flex; height: 100%; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
-.cds--header__nav button, .cds--header__nav a { all: unset; cursor: pointer; display: flex; align-items: center; height: 100%; padding: 0 1rem; color: #c6c6c6; font-size: .875rem; letter-spacing: .16px; border-bottom: 3px solid transparent; border-top: 3px solid transparent; white-space: nowrap; }
+.cds--header__nav { display: flex; align-self: stretch; margin: 0; padding: 0; list-style: none; overflow: hidden; min-width: 0; }
+.cds--header__nav button, .cds--header__nav a { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; height: 3rem; padding: 0 1rem; color: #c6c6c6; font-size: .875rem; letter-spacing: .16px; box-shadow: inset 0 -3px 0 transparent; white-space: nowrap; }
 .cds--header__nav button:hover, .cds--header__nav a:hover { background: var(--cds-shell-header-hover); color: #f4f4f4; }
-.cds--header__nav button[aria-selected="true"], .cds--header__nav a[aria-current="page"] { color: #f4f4f4; border-bottom-color: var(--cds-shell-header-active); }
+.cds--header__nav button[aria-selected="true"], .cds--header__nav a[aria-current="page"] { color: #f4f4f4; background: rgba(255,255,255,.08); box-shadow: inset 0 -3px 0 var(--cds-shell-header-active); }
+@media (max-width: 40rem) { .cds--header { height: auto; flex-wrap: wrap; padding-bottom: 0; } .cds--header__nav { width: 100%; overflow-x: auto; } }
 .cds--header__nav button:focus-visible { outline: 2px solid #ffffff; outline-offset: -2px; }
 .cds--header__global { margin-left: auto; padding-right: 1rem; color: #c6c6c6; font-size: .75rem; letter-spacing: .32px; white-space: nowrap; }
 
@@ -198,9 +199,36 @@ pre.cds--snippet { font-family: var(--cds-font-mono); font-size: .75rem; line-he
 /* ---- tabela danych ---- */
 .cds--data-table-container { overflow-x: auto; background: var(--cds-layer-01); }
 .cds--data-table { width: 100%; border-collapse: collapse; border-spacing: 0; font-size: .875rem; letter-spacing: .16px; }
-.cds--data-table thead th { background: var(--cds-layer-accent-01); color: var(--cds-text-primary); font-weight: 600; text-align: left; height: 3rem; padding: 0 1rem; white-space: nowrap; vertical-align: middle; border-bottom: 1px solid var(--cds-border-subtle-01); }
+.cds--data-table thead th { background: var(--cds-layer-accent-01); color: var(--cds-text-primary); font-weight: 600; text-align: left; height: 3rem; padding: 0 1rem; white-space: nowrap; vertical-align: middle; border-bottom: 2px solid var(--cds-border-strong-01); }
 .cds--data-table tbody td { height: 3rem; padding: .5rem 1rem; border-bottom: 1px solid var(--cds-border-subtle-01); vertical-align: middle; color: var(--cds-text-primary); }
+.cds--data-table tbody tr:nth-child(even) td { background: var(--cds-layer-02); }
 .cds--data-table tbody tr:hover td { background: var(--cds-layer-hover-01); }
+.cds--data-table td.cds--key, .cds--data-table th.cds--key { font-weight: 600; border-right: 1px solid var(--cds-border-subtle-01); }
+.cds--data-table th.cds--group { text-align: center; font-size: .75rem; letter-spacing: .32px; text-transform: uppercase; color: var(--cds-text-secondary); height: 2rem; border-bottom: 1px solid var(--cds-border-subtle-01); }
+.cds--data-table tbody tr.cds--row--ok td:first-child { box-shadow: inset 3px 0 0 var(--cds-support-success); }
+.cds--data-table tbody tr.cds--row--warn td:first-child { box-shadow: inset 3px 0 0 var(--cds-support-warning); }
+.cds--data-table tbody tr.cds--row--bad td:first-child { box-shadow: inset 3px 0 0 var(--cds-support-error); }
+.cds--data-table tbody tr.cds--row--info td:first-child { box-shadow: inset 3px 0 0 var(--cds-support-info); }
+/* komórka procentowa ze słupkiem i kolorem progu */
+.cds--pct { display: grid; grid-template-columns: 3.5rem 1fr; align-items: center; gap: .5rem; min-width: 8rem; }
+.cds--pct b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.cds--pct i { display: block; height: .5rem; background: var(--cds-layer-accent-01); position: relative; }
+.cds--pct i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w, 0%); background: var(--cds-data-bar); }
+.cds--pct--bad i::after { background: var(--cds-support-error); } .cds--pct--warn i::after { background: #d2a106; } .cds--pct--ok i::after { background: var(--cds-support-success); }
+.cds--pct small { grid-column: 1 / -1; color: var(--cds-text-helper); font-size: .7rem; letter-spacing: .32px; }
+/* macierz pokrycia */
+.cds--matrix td { text-align: center; padding: .25rem .5rem; }
+.cds--cell-state { display: inline-block; min-width: 5.5rem; padding: .25rem .5rem; font-size: .75rem; letter-spacing: .32px; }
+.cds--cell-state--brak { background: var(--cds-layer-accent-01); color: var(--cds-text-secondary); }
+.cds--cell-state--w_kolejce { background: var(--cds-notification-info-bg); color: var(--cds-text-primary); box-shadow: inset 0 0 0 1px var(--cds-support-info); }
+.cds--cell-state--trwa { background: var(--cds-notification-warning-bg); color: var(--cds-text-primary); box-shadow: inset 0 0 0 1px var(--cds-support-warning); }
+.cds--cell-state--blad, .cds--cell-state--wstrzymane { background: var(--cds-notification-error-bg); color: var(--cds-text-primary); box-shadow: inset 0 0 0 1px var(--cds-support-error); }
+.cds--cell-state--zakonczone { background: var(--cds-notification-success-bg); color: var(--cds-text-primary); font-weight: 600; }
+/* lista braków */
+.cds--todo { margin: 0; padding: 0; list-style: none; } .cds--todo li { display: grid; grid-template-columns: 1.5rem 1fr auto; gap: .5rem; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--cds-border-subtle-01); }
+.cds--todo li::before { content: ""; width: .75rem; height: .75rem; border-radius: 50%; background: var(--cds-support-error); margin-left: .25rem; }
+.cds--todo li.cds--todo--ok::before { background: var(--cds-support-success); } .cds--todo li.cds--todo--warn::before { background: var(--cds-support-warning); }
+.cds--todo li b { font-variant-numeric: tabular-nums; }
 .cds--data-table--compact thead th, .cds--data-table--compact tbody td { height: 2rem; padding: .25rem .75rem; }
 .cds--data-table .cds--num { text-align: right; font-variant-numeric: tabular-nums; }
 .cds--data-table td .cds--text-input, .cds--data-table td .cds--select-input { height: 2rem; background: var(--cds-field-02); }
