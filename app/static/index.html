@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Krzyżówki – wgrywanie zdjęć</title>
+<style>
+  :root { --tlo:#f4f4f2; --ramka:#cfcfc9; --akcent:#2d6a4f; --blad:#b23a3a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--tlo); color:#222; }
+  header { padding:14px 16px; background:#fff; border-bottom:1px solid var(--ramka); }
+  h1 { margin:0; font-size:1.15rem; }
+  main { padding:16px; max-width:720px; margin:0 auto; }
+  .karta { background:#fff; border:1px solid var(--ramka); border-radius:8px; padding:14px; margin-bottom:14px; }
+  label.przycisk, button { display:inline-block; padding:12px 16px; border-radius:8px; border:0; background:var(--akcent); color:#fff; font-size:1rem; cursor:pointer; }
+  button.cichy { background:#666; }
+  input[type=file] { display:none; }
+  #postep { margin-top:10px; font-size:.95rem; min-height:1.2em; }
+  .blad { color:var(--blad); }
+  ul#lista { list-style:none; padding:0; margin:0; }
+  li.poz { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #eee; }
+  li.poz img { width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--ramka); background:#eee; }
+  li.poz .info { flex:1; font-size:.9rem; }
+  li.poz .info small { color:#666; }
+  .akcje button { padding:8px 10px; font-size:.85rem; margin-left:4px; }
+  .odnosniki a { margin-right:10px; font-size:.85rem; }
+</style>
+</head>
+<body>
+<header><h1>Krzyżówki – wgrywanie zdjęć z aparatu</h1></header>
+<main>
+  <div class="karta">
+    <label class="przycisk">📷 Zrób zdjęcie / wybierz z galerii
+      <input id="plik" type="file" accept="image/*" capture="environment" multiple>
+    </label>
+    <div id="postep"></div>
+  </div>
+  <div class="karta">
+    <strong>Wgrane zdjęcia</strong>
+    <ul id="lista"></ul>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const postep = $('#postep');
+
+async function wgraj(pliki) {
+  for (const f of pliki) {
+    const fd = new FormData();
+    fd.append('zdjecie', f, f.name || 'zdjecie.jpg');
+    postep.textContent = `Wysyłanie ${f.name || 'zdjęcia'} (${(f.size/1e6).toFixed(1)} MB)…`;
+    try {
+      const r = await fetch('/api/wgraj', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.blad || r.statusText);
+      postep.textContent = `Zapisano: ${j.zapisano.join(', ')}`;
+    } catch (e) {
+      postep.innerHTML = `<span class="blad">Błąd: ${e.message}</span>`;
+    }
+  }
+  odswiez();
+}
+
+$('#plik').addEventListener('change', e => { if (e.target.files.length) wgraj(e.target.files); e.target.value = ''; });
+
+async function analizuj(nazwa) {
+  await fetch('/api/analizuj/' + encodeURIComponent(nazwa), { method: 'POST' });
+  odswiez();
+  const stem = nazwa.replace(/\.[^.]+$/, '');
+  const t = setInterval(async () => {
+    const s = await (await fetch('/api/stan/' + encodeURIComponent(nazwa))).json();
+    if (s.stan !== 'w toku') { clearInterval(t); odswiez(); }
+  }, 1500);
+}
+
+async function odswiez() {
+  const lista = await (await fetch('/api/lista')).json();
+  const ul = $('#lista'); ul.innerHTML = '';
+  if (!lista.length) { ul.innerHTML = '<li><small>Brak zdjęć.</small></li>'; return; }
+  for (const p of lista) {
+    const stem = p.nazwa.replace(/\.[^.]+$/, '');
+    const li = document.createElement('li'); li.className = 'poz';
+    let stan = p.stan === 'w toku' ? ' · analiza w toku…' : (p.stan === 'błąd' ? ' · <span class="blad">błąd analizy</span>' : '');
+    let odn = '';
+    if (p.wynik) {
+      odn = `<div class="odnosniki">
+        <a href="/wyniki/${stem}/naklad.jpg" target="_blank">nakładka</a>
+        <a href="/wyniki/${stem}/wynik.json" target="_blank">JSON</a>
+        <a href="/wyniki/${stem}/zagadka.png" target="_blank">zagadka</a>
+        <a href="/wyniki/${stem}/pasek.png" target="_blank">pasek</a></div>`;
+    }
+    li.innerHTML = `<img src="/zdjecia/${encodeURIComponent(p.nazwa)}" loading="lazy" alt="">
+      <div class="info"><div>${p.nazwa}</div><small>${p.czas} · ${(p.rozmiar/1e6).toFixed(1)} MB${stan}</small>${odn}</div>
+      <div class="akcje"><button class="${p.wynik ? 'cichy' : ''}" onclick="analizuj('${p.nazwa}')">${p.wynik ? 'Analizuj ponownie' : 'Analizuj'}</button></div>`;
+    ul.appendChild(li);
+  }
+}
+odswiez();
+</script>
+</body>
+</html>
