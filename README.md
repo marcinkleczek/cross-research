@@ -100,7 +100,9 @@ python tests/test_smoke.py      # lub: python -m pytest -q
 
 ## Etap 3 – benchmark małych modeli językowych (`bench/`)
 
-Baza SQLite (`bench.sqlite`, ścieżka w `BENCH_DB`) z tabelami: `krzyzowki`, `ramki` (kratki opisów i ich OCR), `hasla` (jednostka benchmarku: opis, odpowiedź z klucza, długość, kierunek, kategoria, polskość, typ opisu, flaga `gotowe`), `modele`, `uruchomienia` (kolejka), `odpowiedzi`, `zdarzenia`.
+Baza SQLite (`bench.sqlite` w katalogu projektu, ścieżka w `BENCH_DB`; wersja w repozytorium zawiera OCR z IMG_1803, 23 odpowiedzi próbne, rejestr modeli i wyniki przebiegów próbnych) z tabelami: `krzyzowki`, `ramki` (kratki opisów i ich OCR), `hasla` (jednostka benchmarku: opis, odpowiedź z klucza, długość, kierunek, kategoria, polskość, typ opisu, flaga `gotowe`), `modele`, `uruchomienia` (kolejka), `odpowiedzi`, `zdarzenia`.
+
+Po sklonowaniu na innej maszynie uruchom najpierw `python -m krzyzowka.cli input -o output` i `python -m bench.importer output`: import odświeża ścieżki do wycinków ramek (w bazie są ścieżki z maszyny, na której analizowano zdjęcia), a odpowiedzi, etykiety i wyniki zostają.
 
 ```bash
 python -m bench.importer output                 # import wyników ekstrakcji
