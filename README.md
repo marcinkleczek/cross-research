@@ -73,7 +73,7 @@ Współrzędne `*_px` odnoszą się do obrazu zrektyfikowanego (`siatka.jpg`, ko
 
 ### Wyniki na 13 przykładowych zdjęciach
 
-Siatka 16×11 (17×11 dla ucietego IMG_1800) rozpoznana na wszystkich; obszar rysunku poprawny na wszystkich (brak w IMG_1811, który go nie ma); liczba pól paska zgodna na wszystkich z wyjątkiem IMG_1800 (zdjęcie ucina górny rząd); numery kratek komplet na 9 zdjęciach, na pozostałych brakuje jednego. Ramki opisów bez przypisanej strzałki: 1–5 na zdjęcie (część to rzeczywiste podwójne strzałki, część to przeoczone trójkąty) – wszystkie są wymienione w `ostrzezenia`.
+Siatka 16×11 (17×11 dla uciętego IMG_1800) rozpoznana na wszystkich; obszar rysunku poprawny na wszystkich (brak w IMG_1811, który go nie ma); liczba pól paska zgodna na wszystkich z wyjątkiem IMG_1800 (zdjęcie ucina górny rząd); numery kratek komplet na 9 zdjęciach, na pozostałych brakuje jednego. Ramki opisów bez przypisanej strzałki: 1–5 na zdjęcie (część to rzeczywiste podwójne strzałki, część to przeoczone trójkąty) – wszystkie są wymienione w `ostrzezenia`.
 
 ### Czego nie ma
 
