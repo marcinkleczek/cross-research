@@ -35,7 +35,8 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: int = 300) -> tu
         return 0, str(e)
 
 
-def _with_retry(fn, max_tries: int = 6, base: float = 5.0):
+def _with_retry(fn, max_tries: int = 4, base: float = 10.0):
+    """Ponawianie przy 429/5xx: 10, 20, 40 s. Trwałe limity obsługuje worker (odkłada uruchomienie na koniec kolejki)."""
     last = None
     for i in range(max_tries):
         status, data = fn()

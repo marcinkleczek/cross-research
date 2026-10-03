@@ -104,6 +104,7 @@ def run_one(con, run_id: int) -> None:
     prov = providers.get(model["dostawca"])
     db.execute(con, "UPDATE uruchomienia SET status='trwa', start_at=COALESCE(start_at, ?), liczba_hasel=?, blad=NULL WHERE id=?", (time.time(), len(items), run_id))
     _stop_flags[run_id] = False
+    consecutive_limit = 0
     try:
         for h in items:
             if _stop_flags.get(run_id):
@@ -115,6 +116,10 @@ def run_one(con, run_id: int) -> None:
             user, extra = tasks.build_prompt(h, run["wariant"], pool, przyklady=bool(par.get("przyklady")))
             res = prov.generate(model["nazwa"], tasks.SYSTEM, user, schema=tasks.SCHEMA, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
             sc = tasks.score(h, res.get("parsed"), res.get("text"), extra) if not res.get("blad") else {}
+            if res.get("blad") and ("HTTP 429" in res["blad"] or "HTTP 503" in res["blad"] or "HTTP 0" in res["blad"]):
+                consecutive_limit += 1
+            else:
+                consecutive_limit = 0
             db.execute(con, """INSERT INTO odpowiedzi(uruchomienie_id, haslo_id, prompt, surowe, odpowiedz, kandydaci, pewnosc, poprawna, poprawna_luzno, w_top5, dlugosc_ok, wzorzec_ok, format_ok,
                 czas_ms, tokeny_wej, tokeny_wyj, koszt_usd, blad, at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(uruchomienie_id, haslo_id) DO UPDATE SET prompt=excluded.prompt, surowe=excluded.surowe, odpowiedz=excluded.odpowiedz, kandydaci=excluded.kandydaci,
@@ -129,7 +134,18 @@ def run_one(con, run_id: int) -> None:
                 koszt_usd=(SELECT COALESCE(SUM(koszt_usd),0) FROM odpowiedzi WHERE uruchomienie_id=?),
                 tokeny_wej=(SELECT COALESCE(SUM(tokeny_wej),0) FROM odpowiedzi WHERE uruchomienie_id=?),
                 tokeny_wyj=(SELECT COALESCE(SUM(tokeny_wyj),0) FROM odpowiedzi WHERE uruchomienie_id=?) WHERE id=?""", (run_id,) * 6)
+            if consecutive_limit >= 2:
+                # trwały limit dostawcy: odkładamy uruchomienie na koniec kolejki (błędy 429 zostaną powtórzone przy wznowieniu)
+                db.execute(con, "UPDATE uruchomienia SET status='w_kolejce', priorytet=priorytet+1, uwagi=? WHERE id=?",
+                           (f"odłożone po limicie dostawcy {time.strftime('%H:%M:%S')}", run_id))
+                db.log(con, "kolejka", f"uruchomienie {run_id} odłożone: limit dostawcy ({res['blad'][:80]})")
+                return "odlozone"
             time.sleep(float(par.get("opoznienie_s", 1.0)))
+        cur = db.execute(con, "DELETE FROM odpowiedzi WHERE uruchomienie_id=? AND blad LIKE 'HTTP 429%'", (run_id,))
+        if cur.rowcount:
+            db.execute(con, "UPDATE uruchomienia SET status='w_kolejce', priorytet=priorytet+1, uwagi=? WHERE id=?", (f"{cur.rowcount} odpowiedzi z limitem 429 do powtórzenia", run_id))
+            db.log(con, "kolejka", f"uruchomienie {run_id}: {cur.rowcount} haseł z limitem 429 wraca do kolejki")
+            return "odlozone"
         db.execute(con, "UPDATE uruchomienia SET status='zakonczone', koniec_at=? WHERE id=?", (time.time(), run_id))
         db.log(con, "kolejka", f"zakończono uruchomienie {run_id}")
     except Exception as e:  # noqa: BLE001
@@ -142,13 +158,22 @@ def stop(run_id: int):
 
 
 def worker_loop(con, only: int | None = None):
+    deferred_streak = 0
     while True:
         if only:
             run_one(con, only); return
         nxt = db.one(con, "SELECT id FROM uruchomienia WHERE status='w_kolejce' ORDER BY priorytet, id LIMIT 1")
         if not nxt:
             return
-        run_one(con, nxt["id"])
+        if run_one(con, nxt["id"]) == "odlozone":
+            deferred_streak += 1
+            pending = db.one(con, "SELECT COUNT(*) n FROM uruchomienia WHERE status='w_kolejce'")["n"]
+            if deferred_streak >= pending:  # wszystkie czekające odłożone z rzędu: przerwa, by limity minęły
+                wait = min(900, 60 * deferred_streak)
+                db.log(con, "kolejka", f"wszystkie uruchomienia odłożone; przerwa {wait} s")
+                time.sleep(wait)
+        else:
+            deferred_streak = 0
 
 
 def start_background(only: int | None = None) -> bool:
