@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 RETRY_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
+NO_RETRY_STATUSES = {401, 402, 403, 404}  # klucz, brak w darmowym pakiecie, brak modelu: ponawianie nic nie da
 
 
 def _post_json(url: str, payload: dict, headers: dict, timeout: int = 300) -> tuple[int, dict | str]:
@@ -79,16 +80,30 @@ class Ollama:
         return [{"nazwa": m["name"], "parametry": (m.get("details") or {}).get("parameter_size"), "rozmiar": m.get("size")} for m in d.get("models", [])]
 
     def generate(self, model: str, system: str, user: str, schema: dict | None = None, temperature: float = 0.0, max_tokens: int = 300, seed: int = 7) -> dict:
-        payload = {"model": model, "stream": False, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                   "options": {"temperature": temperature, "num_predict": max_tokens, "seed": seed}}
+        # modele rozumujące (gpt-oss, deepseek, qwen3) zużywają limit tokenów na "myślenie": wyłączamy je i dajemy zapas
+        payload = {"model": model, "stream": False, "think": False,
+                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                   "options": {"temperature": temperature, "num_predict": max(max_tokens, 1500), "seed": seed}}
         if schema:
             payload["format"] = schema
         headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
         t = time.time()
         status, data = _with_retry(lambda: _post_json(self.host + "/api/chat", payload, headers))
         ms = int((time.time() - t) * 1000)
+        if status == 400 and isinstance(data, dict) and "think" in str(data.get("error", "")):
+            payload.pop("think", None)  # starszy serwer lub model bez trybu rozumowania
+            status, data = _with_retry(lambda: _post_json(self.host + "/api/chat", payload, headers))
+            ms = int((time.time() - t) * 1000)
         if status != 200:
             return {"text": None, "parsed": None, "usage": {}, "koszt_usd": 0.0, "czas_ms": ms, "surowe": data, "blad": f"HTTP {status}: {str(data)[:300]}"}
+        msg = data.get("message") or {}
+        if not (msg.get("content") or "").strip() and msg.get("thinking") and data.get("done_reason") == "length":
+            # model nie respektuje think=false (np. gpt-oss) i zużył limit na rozumowanie: najniższy poziom + duży zapas
+            payload["think"] = "low"; payload["options"]["num_predict"] = 6000
+            status, data = _with_retry(lambda: _post_json(self.host + "/api/chat", payload, headers))
+            ms = int((time.time() - t) * 1000)
+            if status != 200:
+                return {"text": None, "parsed": None, "usage": {}, "koszt_usd": 0.0, "czas_ms": ms, "surowe": data, "blad": f"HTTP {status}: {str(data)[:300]}"}
         text = (data.get("message") or {}).get("content", "")
         return {"text": text, "parsed": _parse_json_text(text), "usage": {"wej": data.get("prompt_eval_count", 0), "wyj": data.get("eval_count", 0)},
                 "koszt_usd": 0.0, "czas_ms": ms, "surowe": data, "blad": None}
