@@ -85,7 +85,7 @@ def add_run(con, model_id: str, wariant: str, podzbior: dict | None = None, para
         raise ValueError(f"nieznany wariant {wariant}")
     if not db.one(con, "SELECT id FROM modele WHERE id=?", (model_id,)):
         raise ValueError(f"nieznany model {model_id} (odśwież rejestr lub dodaj ręcznie)")
-    podzbior = podzbior or {}; parametry = {"temperatura": 0.0, "opoznienie_s": 1.0, "przyklady": False, "max_tokens": 300, **(parametry or {})}
+    podzbior = podzbior or {}; parametry = {"temperatura": 0.0, "opoznienie_s": 1.0, "przyklady": False, "max_tokens": 300, "tryb": "auto", **(parametry or {})}
     n = len(select_items(con, podzbior))
     nazwa = nazwa or f"{model_id} · {wariant} · {n} haseł"
     cur = db.execute(con, "INSERT INTO uruchomienia(nazwa, model_id, wariant, podzbior, parametry, status, priorytet, utworzono_at, liczba_hasel) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -118,8 +118,31 @@ def run_one(con, run_id: int) -> None:
             db.set_setting(con, "worker_heartbeat", {"at": time.time(), "uruchomienie": run_id, "pid": os.getpid()})
             db.set_setting(con, f"worker_heartbeat_{os.getpid()}", {"at": time.time(), "uruchomienie": run_id})
             user, extra = tasks.build_prompt(h, run["wariant"], pool, przyklady=bool(par.get("przyklady")))
-            res = prov.generate(model["nazwa"], tasks.SYSTEM, user, schema=tasks.SCHEMA, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
+            tryb = par.get("tryb", "auto")
+            tryb_uzyty = "json"
+            if tryb == "tekst":
+                res = prov.generate(model["nazwa"], tasks.SYSTEM_TEKST, user, schema=None, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
+                tryb_uzyty = "tekst"
+                if not res.get("blad"):
+                    res["parsed"] = tasks.parse_text(res.get("text"), h["dlugosc"])
+            else:
+                res = prov.generate(model["nazwa"], tasks.SYSTEM, user, schema=tasks.SCHEMA, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
+                if tryb == "auto" and not res.get("blad") and not (isinstance(res.get("parsed"), dict) and res["parsed"].get("odpowiedz")):
+                    # model nie dał JSON: pytamy ponownie o samo słowo / listę propozycji i przyjmujemy to za odpowiedź
+                    res2 = prov.generate(model["nazwa"], tasks.SYSTEM_TEKST, user, schema=None, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
+                    if not res2.get("blad"):
+                        pt = tasks.parse_text(res2.get("text"), h["dlugosc"])
+                        if pt:
+                            tryb_uzyty = "tekst"
+                            res2["parsed"] = pt
+                            res2["usage"] = {"wej": (res.get("usage") or {}).get("wej", 0) + (res2.get("usage") or {}).get("wej", 0), "wyj": (res.get("usage") or {}).get("wyj", 0) + (res2.get("usage") or {}).get("wyj", 0)}
+                            res2["koszt_usd"] = (res.get("koszt_usd") or 0) + (res2.get("koszt_usd") or 0)
+                            res2["czas_ms"] = (res.get("czas_ms") or 0) + (res2.get("czas_ms") or 0)
+                            res2["surowe"] = {"json_proba": res.get("text"), "tekst": res2.get("surowe")}
+                            res = res2
             sc = tasks.score(h, res.get("parsed"), res.get("text"), extra) if not res.get("blad") else {}
+            if sc and tryb_uzyty == "tekst":
+                sc["format_ok"] = 0  # odpowiedź przyjęta z trybu tekstowego: liczy się do trafności, ale JSON się nie udał
             if res.get("blad") and ("HTTP 429" in res["blad"] or "HTTP 503" in res["blad"] or "HTTP 0" in res["blad"]):
                 consecutive_limit += 1
             else:
@@ -129,7 +152,7 @@ def run_one(con, run_id: int) -> None:
                 ON CONFLICT(uruchomienie_id, haslo_id) DO UPDATE SET prompt=excluded.prompt, surowe=excluded.surowe, odpowiedz=excluded.odpowiedz, kandydaci=excluded.kandydaci,
                 pewnosc=excluded.pewnosc, poprawna=excluded.poprawna, poprawna_luzno=excluded.poprawna_luzno, w_top5=excluded.w_top5, dlugosc_ok=excluded.dlugosc_ok, wzorzec_ok=excluded.wzorzec_ok,
                 format_ok=excluded.format_ok, czas_ms=excluded.czas_ms, tokeny_wej=excluded.tokeny_wej, tokeny_wyj=excluded.tokeny_wyj, koszt_usd=excluded.koszt_usd, blad=excluded.blad, at=excluded.at""",
-                (run_id, h["id"], user, json.dumps({"text": res.get("text"), "surowe": res.get("surowe")}, ensure_ascii=False, default=str)[:30000],
+                (run_id, h["id"], user, json.dumps({"tryb": tryb_uzyty, "text": res.get("text"), "surowe": res.get("surowe")}, ensure_ascii=False, default=str)[:30000],
                  sc.get("odpowiedz"), json.dumps(sc.get("kandydaci"), ensure_ascii=False) if sc.get("kandydaci") is not None else None, sc.get("pewnosc"),
                  sc.get("poprawna"), sc.get("poprawna_luzno"), sc.get("w_top5"), sc.get("dlugosc_ok"), sc.get("wzorzec_ok"), sc.get("format_ok"),
                  res.get("czas_ms"), (res.get("usage") or {}).get("wej"), (res.get("usage") or {}).get("wyj"), res.get("koszt_usd"), res.get("blad"), time.time()))
@@ -220,6 +243,7 @@ def main(argv=None):
     sub.add_parser("modele")
     a = sub.add_parser("dodaj"); a.add_argument("--model", required=True); a.add_argument("--wariant", required=True, choices=tasks.WARIANTY)
     a.add_argument("--limit", type=int); a.add_argument("--opoznienie", type=float, default=1.0); a.add_argument("--przyklady", action="store_true"); a.add_argument("--krzyzowka", action="append")
+    a.add_argument("--tryb", choices=tasks.TRYBY, default="auto", help="auto: JSON, a gdy się nie da, pytanie o samo słowo; json; tekst")
     s = sub.add_parser("start"); s.add_argument("--jedno", type=int); s.add_argument("--dostawca", choices=list(providers.PROVIDERS), help="tylko uruchomienia tego dostawcy (po jednym workerze na dostawcę = równolegle)")
     args = ap.parse_args(argv)
     con = db.init()
@@ -229,7 +253,7 @@ def main(argv=None):
         pod = {}
         if args.limit: pod["limit"] = args.limit
         if args.krzyzowka: pod["krzyzowki"] = args.krzyzowka
-        print("uruchomienie", add_run(con, args.model, args.wariant, pod, {"opoznienie_s": args.opoznienie, "przyklady": args.przyklady}))
+        print("uruchomienie", add_run(con, args.model, args.wariant, pod, {"opoznienie_s": args.opoznienie, "przyklady": args.przyklady, "tryb": args.tryb}))
     else:
         worker_loop(con, args.jedno, args.dostawca)
 

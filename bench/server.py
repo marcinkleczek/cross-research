@@ -61,7 +61,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/przeglad":
                 return self._json(self.przeglad(con))
             if p == "/api/slowniki":
-                return self._json({"kategorie": KATEGORIE, "polskosc": POLSKOSC, "typy_opisu": TYPY_OPISU, "warianty": tasks.WARIANTY})
+                return self._json({"kategorie": KATEGORIE, "polskosc": POLSKOSC, "typy_opisu": TYPY_OPISU, "warianty": tasks.WARIANTY, "tryby": tasks.TRYBY})
             if p == "/api/krzyzowki":
                 return self._json(db.rows(con, """SELECT k.*, (SELECT COUNT(*) FROM ramki r WHERE r.krzyzowka_id=k.id AND r.ocr_status='gotowe') ocr_gotowe,
                     (SELECT COUNT(*) FROM hasla h WHERE h.krzyzowka_id=k.id AND h.odpowiedz IS NOT NULL AND h.odpowiedz!='') z_odpowiedzia,

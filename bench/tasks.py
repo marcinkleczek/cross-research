@@ -37,6 +37,15 @@ SYSTEM = (
     "Żadnego tekstu poza JSON."
 )
 
+SYSTEM_TEKST = (
+    "Rozwiązujesz polską krzyżówkę. Dla podanego opisu podaj hasło: jeden wyraz (lub nazwę własną pisaną łącznie), "
+    "WIELKIMI LITERAMI, z polskimi znakami diakrytycznymi (Ą, Ć, Ę, Ł, Ń, Ó, Ś, Ź, Ż), bez spacji i łączników. "
+    "Odpowiedz wyłącznie listą propozycji po przecinku, od najbardziej prawdopodobnej (najwyżej 5), np.: KOALA, PANDA. "
+    "Bez zdań, bez wyjaśnień, bez numeracji."
+)
+
+TRYBY = ["auto", "json", "tekst"]
+
 PRZYKLADY = [
     ("Stolica Polski", 8, "WARSZAWA"),
     ("Autor „Pana Tadeusza”", 10, "MICKIEWICZ"),
@@ -115,6 +124,43 @@ def build_prompt(haslo: dict, wariant: str, pool: list[str] | None = None, przyk
     return "\n".join(lines), extra
 
 
+_WORD_RE = re.compile(r"[A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż][A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\-]{1,}")
+_STOP = {"ODPOWIEDZ", "ODPOWIEDŹ", "HASLO", "HASŁO", "KANDYDACI", "PEWNOSC", "PEWNOŚĆ", "LITER", "OPIS", "JSON", "LICZBA", "WZORZEC", "PODAJ", "NIE", "TAK", "LUB", "ORAZ", "THE", "ANSWER"}
+
+
+def parse_text(text: str | None, n: int | None = None) -> dict | None:
+    """Odpowiedź tekstowa: lista słów po przecinku/nowej linii. Pierwsze słowo o właściwej długości (jeśli znana) to odpowiedź,
+    reszta to kandydaci. Zwraca słownik jak z JSON (pewnosc = None) lub None, gdy brak słów."""
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+    # jeśli jednak jest JSON, użyj go
+    a, b = t.find("{"), t.rfind("}")
+    if a != -1 and b > a:
+        try:
+            d = json.loads(t[a:b + 1])
+            if isinstance(d, dict) and d.get("odpowiedz"):
+                return d
+        except json.JSONDecodeError:
+            pass
+    # ostatnia niepusta linia zwykle zawiera odpowiedź modeli rozumujących; bierzemy wszystkie słowa, od końca
+    words = []
+    for line in reversed([l for l in t.splitlines() if l.strip()]):
+        for w in _WORD_RE.findall(line):
+            w = normalize(w)
+            if len(w) >= 2 and w not in _STOP and w not in words:
+                words.append(w)
+        if words and (n is None or any(len(w) == n for w in words)):
+            break
+    if not words:
+        return None
+    first = next((w for w in words if n and len(w) == n), words[0])
+    cands = [first] + [w for w in words if w != first][:4]
+    return {"odpowiedz": first, "kandydaci": cands, "pewnosc": None}
+
+
 def score(haslo: dict, parsed: dict | None, text: str | None, extra: dict) -> dict:
     ans = normalize(haslo["odpowiedz"])
     out = {"format_ok": 0, "odpowiedz": None, "kandydaci": None, "pewnosc": None, "poprawna": 0, "poprawna_luzno": 0, "w_top5": 0, "dlugosc_ok": None, "wzorzec_ok": None}
@@ -129,10 +175,10 @@ def score(haslo: dict, parsed: dict | None, text: str | None, extra: dict) -> di
         except (TypeError, ValueError):
             out["pewnosc"] = None
     elif text:
-        # awaryjnie: pierwsze słowo z wielkich liter w tekście
-        m = re.search(r"[A-ZĄĆĘŁŃÓŚŹŻ]{2,}", text.upper())
-        raw = m.group(0) if m else text
-        cands = []
+        pt = parse_text(text, len(ans))
+        if not pt:
+            return out
+        raw = pt["odpowiedz"]; cands = pt["kandydaci"]
     else:
         return out
     a = normalize(raw)

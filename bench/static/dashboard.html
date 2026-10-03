@@ -144,10 +144,11 @@ python -m bench.ocr uruchom --model sonnet [--krzyzowka IMG_1803] [--limit 50]</
       <label class="cds--form-item"><span class="cds--label">Ziarno</span><input id="q_z" class="cds--text-input short" type="number" value="1"></label>
       <label class="cds--form-item"><span class="cds--label">Opóźnienie [s]</span><input id="q_o" class="cds--text-input short" type="number" step="0.5" value="1"></label>
       <label class="cds--form-item"><span class="cds--label">Temperatura</span><input id="q_t" class="cds--text-input short" type="number" step="0.1" value="0"></label>
+      <label class="cds--form-item"><span class="cds--label">Tryb odpowiedzi</span><select id="q_tr" class="cds--select-input">${SL.tryby.map(t=>`<option>${t}</option>`).join('')}</select></label>
       <label class="cds--form-item"><span class="cds--label">Przykłady</span><input id="q_p" class="cds--checkbox" type="checkbox" style="height:2.5rem"></label>
       <label class="cds--form-item"><span class="cds--label">Priorytet</span><input id="q_pr" class="cds--text-input short" type="number" value="100"></label>
       <button class="cds--btn" onclick="dodajUr()">Dodaj do kolejki</button></div>
-      <p class="cds--type-helper-text-01" style="max-width:80ch">Powstaje jedno uruchomienie na każdą parę model × wariant. Worker wykonuje je po kolei (priorytet, potem kolejność), jedno zapytanie naraz z zadanym opóźnieniem; przy 429/5xx ponawia z rosnącym odstępem. Wszystko wznawialne.</p></section>
+      <p class="cds--type-helper-text-01" style="max-width:80ch">Powstaje jedno uruchomienie na każdą parę model × wariant. Worker wykonuje je po kolei (priorytet, potem kolejność), jedno zapytanie naraz z zadanym opóźnieniem; przy 429/5xx ponawia z rosnącym odstępem. Wszystko wznawialne. Tryb odpowiedzi: <b>auto</b> = JSON ze schematem, a gdy model go nie zwróci, drugie pytanie o samo słowo lub listę propozycji (odpowiedź liczy się do trafności, „format” = 0); <b>json</b> = tylko JSON; <b>tekst</b> = od razu słowo/lista.</p></section>
       <section><div class="cds--row" style="margin-bottom:.5rem"><button class="cds--btn" ${w.dziala?'disabled':''} onclick="api('/api/worker/start',{}).then(render)">Uruchom workera (cała kolejka)</button><span class="cds--type-helper-text-01">worker: ${w.dziala?'<span class="cds--success">działa</span>':'nie działa'}</span></div>
       ${T(`<th>Id</th><th>Nazwa</th><th>Status</th><th class="cds--num">Prio</th><th class="cds--num">Postęp</th><th class="cds--num">Błędy</th><th>Start</th><th class="cds--num">Czas</th><th class="cds--num">Tokeny</th><th class="cds--num">Koszt</th><th></th>`,
       us.map(u=>`<tr class="cds--row--${{trwa:'warn',zakonczone:'ok',blad:'bad',wstrzymane:'bad',w_kolejce:'info'}[u.status]||''}"><td class="cds--mono cds--key">${u.id}</td><td>${esc(u.nazwa)}</td><td>${stTag(u.status)}${u.blad?`<div class="cds--error cds--mono pre-wrap" style="max-width:40ch">${esc(u.blad.slice(-200))}</div>`:''}</td>
@@ -212,7 +213,7 @@ async function ocrStart(){await api('/api/ocr/start',{model:$('#ocr_model').valu
 async function dodajUr(){
   const sv=id=>[...$(id).selectedOptions].map(o=>o.value);
   const pod={}; if(sv('#q_k').length)pod.krzyzowki=sv('#q_k'); if($('#q_l').value)pod.limit=+$('#q_l').value; pod.ziarno=+$('#q_z').value;
-  const r=await api('/api/uruchomienia',{modele:sv('#q_m'),warianty:sv('#q_w'),podzbior:pod,parametry:{opoznienie_s:+$('#q_o').value,temperatura:+$('#q_t').value,przyklady:$('#q_p').checked},priorytet:+$('#q_pr').value});
+  const r=await api('/api/uruchomienia',{modele:sv('#q_m'),warianty:sv('#q_w'),podzbior:pod,parametry:{opoznienie_s:+$('#q_o').value,temperatura:+$('#q_t').value,przyklady:$('#q_p').checked,tryb:$('#q_tr').value},priorytet:+$('#q_pr').value});
   msg(`dodano ${r.ids.length} uruchomień`); render();
 }
 render();
