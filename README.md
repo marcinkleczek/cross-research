@@ -25,6 +25,9 @@ Zależności: `numpy`, `opencv-python-headless` (klasyczne przetwarzanie obrazu)
 | `scripts/pulpit.sh [port]`, `scripts/wgrywanie.sh [port]`, `scripts/worker.sh [id]` | pojedyncze procesy na pierwszym planie |
 | `scripts/ocr.sh lista` / `scripts/ocr.sh uruchom --model sonnet` | OCR ramek przez Claude Code |
 | `scripts/analizuj.sh [zdjęcie…]` | ekstrakcja i import nowych zdjęć |
+| `scripts/scal.sh inna.sqlite` | scala wyniki z kopii bazy, na której pracował worker na innej maszynie |
+
+Praca na dwóch maszynach: obie startują z tej samej `bench.sqlite` z repozytorium, każda uruchamia workera innego dostawcy (np. `scripts/worker.sh claude_cli` u siebie, pozostali gdzie indziej), a potem jedna strona scala bazę drugiej (`scripts/scal.sh`). Jedno uruchomienie nie może być przetwarzane w dwóch kopiach naraz.
 
 Każdy skrypt wczytuje `.env` i ustawia `BENCH_DB` na `bench.sqlite` w katalogu projektu.
 
