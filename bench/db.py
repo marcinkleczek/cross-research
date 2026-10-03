@@ -84,7 +84,18 @@ CREATE TABLE IF NOT EXISTS zdarzenia (
 );
 
 CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT);
+
+CREATE TABLE IF NOT EXISTS propozycje (          -- odpowiedzi modeli zebrane do półautomatycznego klucza
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  haslo_id TEXT REFERENCES hasla(id) ON DELETE CASCADE,
+  model_id TEXT, odpowiedz TEXT, kandydaci TEXT, pewnosc REAL, surowe TEXT, at REAL,
+  UNIQUE(haslo_id, model_id)
+);
 """
+
+MIGRACJE = [
+    "ALTER TABLE hasla ADD COLUMN alternatywy TEXT",   # JSON: lista dodatkowych poprawnych odpowiedzi
+]
 
 
 def connect() -> sqlite3.Connection:
@@ -97,6 +108,11 @@ def init() -> sqlite3.Connection:
     con = connect()
     with _lock:
         con.executescript(SCHEMA)
+        for m in MIGRACJE:
+            try:
+                con.execute(m); con.commit()
+            except sqlite3.OperationalError:
+                pass  # kolumna już istnieje
     return con
 
 

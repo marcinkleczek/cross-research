@@ -15,7 +15,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from bench import db, runner, tasks, metrics, ocr, importer  # noqa: E402
+from bench import db, runner, tasks, metrics, ocr, importer, propozycje  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 KATEGORIE = ["jezyk", "geografia", "historia", "kultura", "nauka", "przyroda", "sport", "religia_mitologia", "zycie_codzienne", "skroty_jednostki", "krzyzowkowe", "inne"]
@@ -23,6 +23,16 @@ POLSKOSC = ["polska", "swiat", "neutralne"]
 TYPY_OPISU = ["definicja", "synonim", "nazwa_wlasna", "dopelnienie", "skrot", "inne"]
 
 _ocr_state = {"trwa": False, "stop": False, "wynik": None, "model": None}
+_prop_state = {"trwa": False, "stop": False, "wynik": None, "modele": None}
+
+
+def prop_thread(modele, krzyzowka):
+    con = db.init()
+    _prop_state.update(trwa=True, stop=False, modele=modele, wynik=None)
+    try:
+        _prop_state["wynik"] = propozycje.zbierz(con, modele, krzyzowka, stop=lambda: _prop_state["stop"])
+    finally:
+        _prop_state["trwa"] = False
 
 
 def ocr_thread(model, krzyzowka, limit, opoznienie):
@@ -101,6 +111,23 @@ class H(BaseHTTPRequestHandler):
                 run = db.one(con, "SELECT u.*, m.dostawca, m.nazwa model_nazwa FROM uruchomienia u LEFT JOIN modele m ON m.id=u.model_id WHERE u.id=?", (rid,))
                 for r in rws: r.pop("surowe", None); r.pop("prompt", None)
                 return self._json({"uruchomienie": run, "metryki": metrics.summarize(rws), "odpowiedzi": rws if q.get("pelne") else rws[:500]})
+            if p == "/api/weryfikacja":
+                k = q.get("krzyzowka")
+                r = propozycje.uzgodnij(con, k)
+                kz = db.one(con, "SELECT * FROM krzyzowki WHERE id=?", (k,))
+                r["siatka"] = {"wiersze": kz["wiersze"], "kolumny": kz["kolumny"]}
+                wyn = json.load(open(os.path.join(kz["katalog_wyniku"], "wynik.json"), encoding="utf-8"))
+                r["komorki"] = wyn["komorki"]; r["numery"] = wyn["numery"]; r["bok"] = wyn["siatka"]["bok_komorki_px"]
+                r["propozycje_stan"] = _prop_state
+                r["liczba_propozycji"] = db.one(con, "SELECT COUNT(*) n FROM propozycje p JOIN hasla h ON h.id=p.haslo_id WHERE h.krzyzowka_id=?", (k,))["n"]
+                return self._json(r)
+            if p.startswith("/siatka/"):
+                kz = db.one(con, "SELECT katalog_wyniku FROM krzyzowki WHERE id=?", (p.split("/")[-1].replace(".jpg", ""),))
+                f = os.path.join(kz["katalog_wyniku"], "siatka.jpg") if kz else ""
+                return self._send(200, open(f, "rb").read(), "image/jpeg") if os.path.isfile(f) else self._send(404, b"brak")
+            if p == "/api/propozycje/stan":
+                return self._json({**_prop_state, "wg_modelu": db.rows(con, "SELECT model_id, COUNT(*) n FROM propozycje GROUP BY model_id"),
+                                   "hasla_z_opisem": db.one(con, "SELECT COUNT(*) n FROM hasla WHERE opis IS NOT NULL AND opis!=''")["n"]})
             if p == "/api/macierz":
                 models = db.rows(con, "SELECT * FROM modele WHERE aktywny=1 OR id IN (SELECT DISTINCT model_id FROM uruchomienia) ORDER BY darmowy DESC, dostawca, nazwa")
                 runs = db.rows(con, "SELECT * FROM uruchomienia ORDER BY id")
@@ -152,7 +179,9 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"zaimportowano": res})
             if p.startswith("/api/haslo/"):
                 hid = p[len("/api/haslo/"):]
-                fields = {k: b[k] for k in ("opis", "odpowiedz", "kategoria", "polskosc", "typ_opisu", "gotowe", "uwagi", "zrodlo_odpowiedzi") if k in b}
+                fields = {k: b[k] for k in ("opis", "odpowiedz", "kategoria", "polskosc", "typ_opisu", "gotowe", "uwagi", "zrodlo_odpowiedzi", "alternatywy") if k in b}
+                if "alternatywy" in fields and isinstance(fields["alternatywy"], str):
+                    fields["alternatywy"] = json.dumps([tasks.normalize(a) for a in fields["alternatywy"].split("|") if tasks.normalize(a)], ensure_ascii=False) or None
                 if "odpowiedz" in fields and fields["odpowiedz"]:
                     fields["odpowiedz"] = tasks.normalize(fields["odpowiedz"])
                     fields.setdefault("zrodlo_odpowiedzi", "reczna")
@@ -174,6 +203,26 @@ class H(BaseHTTPRequestHandler):
                 db.execute(con, "UPDATE ramki SET tekst=?, zweryfikowano=?, ocr_status=CASE WHEN ?!='' THEN 'gotowe' ELSE ocr_status END WHERE id=?", (b.get("tekst", ""), int(b.get("zweryfikowano", 1)), b.get("tekst", ""), rid))
                 db.execute(con, "UPDATE hasla SET opis=? WHERE ramka_id=?", (b.get("tekst", ""), rid))
                 return self._json({"ok": True})
+            if p == "/api/propozycje/start":
+                if _prop_state["trwa"]: return self._json({"blad": "zbieranie propozycji już trwa"}, 409)
+                modele = b.get("modele") or propozycje.DOMYSLNE_MODELE
+                threading.Thread(target=prop_thread, args=(modele, b.get("krzyzowka") or None), daemon=True).start()
+                return self._json({"ok": True, "modele": modele})
+            if p == "/api/propozycje/stop":
+                _prop_state["stop"] = True; return self._json({"ok": True})
+            if p == "/api/weryfikacja/zatwierdz":
+                # zatwierdzenie listy haseł: odpowiedź (+ alternatywy), źródło 'model_zweryfikowany', gotowe=1
+                n = 0
+                for it in b.get("hasla", []):
+                    h = db.one(con, "SELECT dlugosc FROM hasla WHERE id=?", (it["id"],))
+                    odp = tasks.normalize(it.get("odpowiedz") or "")
+                    if not h or len(odp) != h["dlugosc"]:
+                        continue
+                    alt = [tasks.normalize(a) for a in (it.get("alternatywy") or []) if tasks.normalize(a) and len(tasks.normalize(a)) == h["dlugosc"] and tasks.normalize(a) != odp]
+                    db.execute(con, "UPDATE hasla SET odpowiedz=?, alternatywy=?, zrodlo_odpowiedzi=COALESCE(NULLIF(zrodlo_odpowiedzi,''), 'model_zweryfikowany'), gotowe=1 WHERE id=?",
+                               (odp, json.dumps(alt, ensure_ascii=False) if alt else None, it["id"])); n += 1
+                db.log(con, "weryfikacja", f"zatwierdzono {n} haseł")
+                return self._json({"zatwierdzono": n})
             if p == "/api/ocr/start":
                 if _ocr_state["trwa"]: return self._json({"blad": "OCR już trwa"}, 409)
                 threading.Thread(target=ocr_thread, args=(b.get("model", "sonnet"), b.get("krzyzowka") or None, int(b["limit"]) if b.get("limit") else None, float(b.get("opoznienie", 0.5))), daemon=True).start()
