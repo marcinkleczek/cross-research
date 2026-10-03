@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import time
+import http.client
 import urllib.error
 import urllib.request
 
@@ -31,8 +32,11 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: int = 300) -> tu
             return e.code, json.loads(body)
         except json.JSONDecodeError:
             return e.code, body
-    except (urllib.error.URLError, TimeoutError) as e:
-        return 0, str(e)
+    except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, OSError) as e:
+        # urwany strumień (IncompleteRead), zerwane połączenie, przekroczony czas: traktujemy jak chwilową awarię
+        return 0, f"{type(e).__name__}: {e}"
+    except json.JSONDecodeError as e:
+        return 0, f"niepoprawny JSON w odpowiedzi: {e}"
 
 
 def _with_retry(fn, max_tries: int = 4, base: float = 10.0):
