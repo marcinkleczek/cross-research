@@ -201,7 +201,16 @@ class ClaudeCLI:
                 "koszt_usd": float(d.get("total_cost_usd") or 0), "czas_ms": ms, "surowe": {k: d.get(k) for k in ("modelUsage", "usage", "duration_api_ms", "stop_reason", "num_turns")}, "blad": None}
 
 
-PROVIDERS = {"ollama": Ollama, "openrouter": OpenRouter, "claude_cli": ClaudeCLI}
+class OllamaLocal(Ollama):
+    """Lokalny serwer Ollama (OLLAMA_LOCAL_HOST, domyślnie http://127.0.0.1:11434), bez klucza; działa równolegle z chmurą."""
+    name = "ollama_local"
+
+    def __init__(self):
+        super().__init__(host=os.environ.get("OLLAMA_LOCAL_HOST") or "http://127.0.0.1:11434", api_key="")
+        self.key = None
+
+
+PROVIDERS = {"ollama": Ollama, "ollama_local": OllamaLocal, "openrouter": OpenRouter, "claude_cli": ClaudeCLI}
 
 
 def get(name: str):

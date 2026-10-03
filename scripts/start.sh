@@ -11,6 +11,7 @@ start pulpit python -m bench.server --port "${PULPIT_PORT:-8010}"
 start wgrywanie python -m app.server --port "${WGRYWANIE_PORT:-8000}" --katalog input --wyniki output
 if [ "${BEZ_WORKERA:-0}" != "1" ]; then
   for d in ollama openrouter claude_cli; do start "worker-$d" python -m bench.runner start --dostawca "$d"; done
+  if curl -sf "${OLLAMA_LOCAL_HOST:-http://127.0.0.1:11434}/api/version" >/dev/null 2>&1; then start worker-ollama_local python -m bench.runner start --dostawca ollama_local; fi
 fi
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 echo "Pulpit:    http://localhost:${PULPIT_PORT:-8010}/"
