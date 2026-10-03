@@ -88,7 +88,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/uruchomienia":
                 return self._json(db.rows(con, "SELECT u.*, m.dostawca, m.nazwa model_nazwa FROM uruchomienia u LEFT JOIN modele m ON m.id=u.model_id ORDER BY CASE status WHEN 'trwa' THEN 0 WHEN 'w_kolejce' THEN 1 ELSE 2 END, priorytet, id") + [])
             if p == "/api/worker":
-                return self._json({"dziala": runner.worker_alive()})
+                return self._json({"dziala": runner.worker_alive(con), "sygnal": db.setting(con, "worker_heartbeat")})
             if p.startswith("/api/wyniki/"):
                 rid = p.split("/")[3]
                 csvmode = rid.endswith(".csv"); rid = int(rid.replace(".csv", ""))
@@ -101,6 +101,23 @@ class H(BaseHTTPRequestHandler):
                 run = db.one(con, "SELECT u.*, m.dostawca, m.nazwa model_nazwa FROM uruchomienia u LEFT JOIN modele m ON m.id=u.model_id WHERE u.id=?", (rid,))
                 for r in rws: r.pop("surowe", None); r.pop("prompt", None)
                 return self._json({"uruchomienie": run, "metryki": metrics.summarize(rws), "odpowiedzi": rws if q.get("pelne") else rws[:500]})
+            if p == "/api/macierz":
+                models = db.rows(con, "SELECT * FROM modele WHERE aktywny=1 OR id IN (SELECT DISTINCT model_id FROM uruchomienia) ORDER BY darmowy DESC, dostawca, nazwa")
+                runs = db.rows(con, "SELECT * FROM uruchomienia ORDER BY id")
+                acc = {r["uruchomienie_id"]: r for r in db.rows(con, "SELECT uruchomienie_id, AVG(poprawna) traf, COUNT(*) n, SUM(blad IS NOT NULL) bledy FROM odpowiedzi GROUP BY uruchomienie_id")}
+                cells = {}
+                for r in runs:
+                    key = (r["model_id"], r["wariant"]); prev = cells.get(key)
+                    a = acc.get(r["id"], {})
+                    cur = {"id": r["id"], "status": r["status"], "zrobione": r["zrobione"], "liczba": r["liczba_hasel"], "bledy": r["bledy"], "trafnosc": a.get("traf"), "n": a.get("n") or 0}
+                    if prev is None or r["status"] == "trwa" or (prev["status"] != "zakonczone" and r["status"] == "zakonczone") or r["id"] > prev["id"]:
+                        cells[key] = cur
+                out = []
+                for m in models:
+                    out.append({"model": m, "warianty": {w: cells.get((m["id"], w)) for w in tasks.WARIANTY}})
+                return self._json({"warianty": tasks.WARIANTY, "modele": out})
+            if p == "/api/braki":
+                return self._json(self.braki(con))
             if p == "/api/porownanie":
                 out = []
                 for run in db.rows(con, "SELECT u.*, m.dostawca, m.nazwa model_nazwa FROM uruchomienia u LEFT JOIN modele m ON m.id=u.model_id WHERE u.zrobione>0 ORDER BY u.id"):
@@ -144,6 +161,8 @@ class H(BaseHTTPRequestHandler):
                         return self._json({"blad": f"odpowiedź ma {len(fields['odpowiedz'])} liter, hasło w siatce ma {h['dlugosc']}"}, 400)
                 if fields:
                     db.execute(con, "UPDATE hasla SET " + ", ".join(f"{k}=?" for k in fields) + " WHERE id=?", list(fields.values()) + [hid])
+                if "opis" in fields:
+                    db.execute(con, "UPDATE ramki SET tekst=?, zweryfikowano=1 WHERE id=(SELECT ramka_id FROM hasla WHERE id=?)", (fields["opis"], hid))
                 return self._json(db.one(con, "SELECT * FROM hasla WHERE id=?", (hid,)))
             if p == "/api/hasla/gotowe":
                 # oznacz jako gotowe wszystkie z opisem i odpowiedzią (opcjonalnie w jednej krzyżówce)
@@ -173,6 +192,15 @@ class H(BaseHTTPRequestHandler):
                 fields = {k: b[k] for k in ("aktywny", "parametry_mld", "etykieta", "uwagi", "darmowy") if k in b}
                 if fields: db.execute(con, "UPDATE modele SET " + ", ".join(f"{k}=?" for k in fields) + " WHERE id=?", list(fields.values()) + [mid])
                 return self._json({"ok": True})
+            if p == "/api/uruchomienia/brakujace":
+                warianty = b.get("warianty") or tasks.WARIANTY
+                tylko_darmowe = bool(b.get("darmowe", True))
+                ids = []
+                for m in db.rows(con, "SELECT id FROM modele WHERE aktywny=1" + (" AND darmowy=1" if tylko_darmowe else "")):
+                    for w in warianty:
+                        if not db.one(con, "SELECT id FROM uruchomienia WHERE model_id=? AND wariant=?", (m["id"], w)):
+                            ids.append(runner.add_run(con, m["id"], w, b.get("podzbior") or {}, b.get("parametry") or {"opoznienie_s": 2.0}))
+                return self._json({"ids": ids})
             if p == "/api/uruchomienia":
                 ids = []
                 for mid in (b.get("modele") or [b.get("model_id")]):
@@ -195,6 +223,30 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             import traceback; return self._json({"blad": str(e), "slad": traceback.format_exc()[-1500:]}, 500)
 
+    def braki(self, con):
+        """Lista tego, co jeszcze nie jest zrobione, z liczbami."""
+        c = lambda sql, a=(): db.one(con, sql, a)["n"]  # noqa: E731
+        out = []
+        bez_wyniku = [f for f in (os.listdir("input") if os.path.isdir("input") else []) if f.lower().endswith((".jpg", ".jpeg", ".png")) and not db.one(con, "SELECT id FROM krzyzowki WHERE id=?", (os.path.splitext(f)[0],))]
+        out.append({"etap": "Zdjęcia bez analizy i importu", "ile": len(bez_wyniku), "szczegoly": bez_wyniku[:20], "akcja": "python -m krzyzowka.cli input -o output; import w zakładce Dane"})
+        per = db.rows(con, "SELECT krzyzowka_id k, COUNT(*) n FROM ramki WHERE ocr_status!='gotowe' GROUP BY krzyzowka_id ORDER BY k")
+        out.append({"etap": "Ramki opisów bez OCR", "ile": sum(r["n"] for r in per), "szczegoly": [f"{r['k']}: {r['n']}" for r in per], "akcja": "zakładka OCR (sonnet)"})
+        out.append({"etap": "Ramki niezweryfikowane ręcznie", "ile": c("SELECT COUNT(*) n FROM ramki WHERE ocr_status='gotowe' AND zweryfikowano=0"), "szczegoly": [], "akcja": "korekta w zakładce Dane → Hasła (zapis opisu oznacza weryfikację)"})
+        per = db.rows(con, "SELECT krzyzowka_id k, COUNT(*) n FROM hasla WHERE odpowiedz IS NULL OR odpowiedz='' GROUP BY krzyzowka_id ORDER BY k")
+        out.append({"etap": "Hasła bez odpowiedzi z klucza", "ile": sum(r["n"] for r in per), "szczegoly": [f"{r['k']}: {r['n']}" for r in per], "akcja": "wpisz odpowiedzi w zakładce Dane → Hasła"})
+        out.append({"etap": "Hasła bez kategorii lub polskości", "ile": c("SELECT COUNT(*) n FROM hasla WHERE kategoria IS NULL OR polskosc IS NULL"), "szczegoly": [], "akcja": "etykiety w zakładce Dane → Hasła"})
+        out.append({"etap": "Hasła z opisem i odpowiedzią, ale nieoznaczone jako gotowe", "ile": c("SELECT COUNT(*) n FROM hasla WHERE gotowe=0 AND opis IS NOT NULL AND opis!='' AND odpowiedz IS NOT NULL AND odpowiedz!=''"), "szczegoly": [], "akcja": "przycisk „Oznacz gotowe” w zakładce Dane"})
+        brak = []
+        for m in db.rows(con, "SELECT id FROM modele WHERE aktywny=1 AND darmowy=1"):
+            for w in tasks.WARIANTY:
+                if not db.one(con, "SELECT id FROM uruchomienia WHERE model_id=? AND wariant=?", (m["id"], w)):
+                    brak.append(f"{m['id']} · {w}")
+        out.append({"etap": "Darmowe modele bez uruchomienia (model × wariant)", "ile": len(brak), "szczegoly": brak[:30], "akcja": "przycisk „Uruchom wszystkie brakujące” w zakładce Pokrycie"})
+        nz = db.rows(con, "SELECT id, nazwa, status, zrobione, liczba_hasel FROM uruchomienia WHERE status!='zakonczone' ORDER BY id")
+        out.append({"etap": "Uruchomienia niezakończone", "ile": len(nz), "szczegoly": [f"{r['id']}: {r['nazwa']} ({r['status']}, {r['zrobione']}/{r['liczba_hasel']})" for r in nz], "akcja": "worker w zakładce Kolejka"})
+        out.append({"etap": "Odpowiedzi z błędem (do powtórzenia)", "ile": c("SELECT COUNT(*) n FROM odpowiedzi WHERE blad IS NOT NULL"), "szczegoly": [], "akcja": "„Powtórz błędy” przy uruchomieniu"})
+        return out
+
     def przeglad(self, con):
         c = lambda sql, a=(): db.one(con, sql, a)["n"]  # noqa: E731
         d = {
@@ -208,7 +260,7 @@ class H(BaseHTTPRequestHandler):
             "modele": c("SELECT COUNT(*) n FROM modele WHERE aktywny=1"), "modele_darmowe": c("SELECT COUNT(*) n FROM modele WHERE aktywny=1 AND darmowy=1"),
             "uruchomienia": {r["status"]: r["n"] for r in db.rows(con, "SELECT status, COUNT(*) n FROM uruchomienia GROUP BY status")},
             "odpowiedzi": c("SELECT COUNT(*) n FROM odpowiedzi"), "koszt_usd": db.one(con, "SELECT COALESCE(SUM(koszt_usd),0) n FROM odpowiedzi")["n"],
-            "worker": runner.worker_alive(), "ocr": _ocr_state,
+            "worker": runner.worker_alive(con), "ocr": _ocr_state,
             "kategorie": db.rows(con, "SELECT COALESCE(kategoria,'–') kategoria, COUNT(*) n FROM hasla WHERE gotowe=1 GROUP BY kategoria ORDER BY n DESC"),
             "polskosc": db.rows(con, "SELECT COALESCE(polskosc,'–') polskosc, COUNT(*) n FROM hasla WHERE gotowe=1 GROUP BY polskosc"),
             "zdarzenia": db.rows(con, "SELECT * FROM zdarzenia ORDER BY id DESC LIMIT 12"),

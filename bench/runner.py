@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import threading
 import time
@@ -113,6 +114,7 @@ def run_one(con, run_id: int) -> None:
                 return
             if h["id"] in done_ids:
                 continue
+            db.set_setting(con, "worker_heartbeat", {"at": time.time(), "uruchomienie": run_id, "pid": os.getpid()})
             user, extra = tasks.build_prompt(h, run["wariant"], pool, przyklady=bool(par.get("przyklady")))
             res = prov.generate(model["nazwa"], tasks.SYSTEM, user, schema=tasks.SCHEMA, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
             sc = tasks.score(h, res.get("parsed"), res.get("text"), extra) if not res.get("blad") else {}
@@ -187,8 +189,14 @@ def start_background(only: int | None = None) -> bool:
     return True
 
 
-def worker_alive() -> bool:
-    return bool(_worker_thread and _worker_thread.is_alive())
+def worker_alive(con=None) -> bool:
+    """Worker w tym procesie albo zewnętrzny (python -m bench.runner start) z sygnałem życia młodszym niż 3 min."""
+    if _worker_thread and _worker_thread.is_alive():
+        return True
+    if con is not None:
+        hb = db.setting(con, "worker_heartbeat")
+        return bool(hb and time.time() - hb.get("at", 0) < 180)
+    return False
 
 
 def main(argv=None):
