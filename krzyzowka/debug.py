@@ -81,3 +81,22 @@ def render_overlay(lat, types, edges, boxes, arrows, words, numbers) -> np.ndarr
         cv2.rectangle(vis, (x0 - 2, y0 - 2), (x1 + 2, y1 + 2), (0, 90, 255), 1)
         cv2.putText(vis, str(v), (x0 - 2, y0 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 90, 255), 1)
     return vis
+
+
+def render_curves(img: np.ndarray, q, lat, pic: dict | None, long_side: int = 1600) -> np.ndarray:
+    """Wykryte krzywe siatki (wiersze i kolumny) naniesione na oryginalne zdjęcie, wraz z obrysem
+    czworokąta (czerwony) i obszarem rysunku (żółty). Pozwala ocenić śledzenie zagiętych linii."""
+    h, w = img.shape[:2]
+    s = min(1.0, long_side / max(h, w))
+    vis = cv2.resize(img, (int(round(w * s)), int(round(h * s))), interpolation=cv2.INTER_AREA).copy()
+    nodes = (lat.nodes_src * s).astype(np.int32)
+    for j in range(nodes.shape[0]):
+        cv2.polylines(vis, [np.ascontiguousarray(nodes[j]).reshape(-1, 1, 2)], False, (0, 170, 255), 1, cv2.LINE_AA)
+    for k in range(nodes.shape[1]):
+        cv2.polylines(vis, [np.ascontiguousarray(nodes[:, k]).reshape(-1, 1, 2)], False, (0, 170, 255), 1, cv2.LINE_AA)
+    cv2.polylines(vis, [(q.corners * s).astype(np.int32).reshape(-1, 1, 2)], True, (255, 0, 0), 2, cv2.LINE_AA)
+    if pic:
+        j0, k0, hh, ww = pic["wiersz"], pic["kolumna"], pic["wysokosc"], pic["szerokosc"]
+        poly = np.concatenate([nodes[j0, k0:k0 + ww + 1], nodes[j0:j0 + hh + 1, k0 + ww][1:], nodes[j0 + hh, k0:k0 + ww][::-1], nodes[j0:j0 + hh, k0][::-1]])
+        cv2.polylines(vis, [np.ascontiguousarray(poly).reshape(-1, 1, 2)], True, (255, 220, 0), 2, cv2.LINE_AA)
+    return vis

@@ -38,14 +38,15 @@ Dla każdego zdjęcia powstaje katalog `output/<nazwa>/`:
 | `wynik.json` | pełna struktura (opis niżej) |
 | `naklad.jpg` | nakładka kontrolna: ramki opisów `O<n>`, strzałki, przebieg haseł `H<n>/O<m>`, numery kratek, rysunek, separatory faliste |
 | `siatka.jpg` | zdjęcie po rektyfikacji (każda komórka ma dokładnie 128 × 128 px) |
+| `krzywe.jpg` | wykryte krzywe siatki (wiersze i kolumny) naniesione na oryginalne zdjęcie, obrys siatki i obszar rysunku |
 | `opisy/opis_NN.png` | wycinek każdej ramki opisu w pełnej rozdzielczości zdjęcia |
 | `zagadka.png` | wycinek obszaru rysunku/zagadki |
 | `pasek.png`, `podpis.png` | pasek rozwiązania i podpis nad nim |
 
 ### Przebieg
 
-1. **Obrys siatki** – maska cienkich ciemnych struktur (black-hat), długie odcinki poziome i pionowe, największa spójna kratownica, cztery skrajne proste dopasowane odpornie (RANSAC) do obwiedni kratownicy, homografia.
-2. **Kratownica** – liczba wierszy i kolumn z autokorelacji masek linii; próbki położeń każdej linii; globalne pole deformacji (wielomian 2D, RANSAC z hipotezą kwadratową), potem lokalne doskakiwanie węzłów do linii. Obraz jest przepróbkowany do idealnie regularnej siatki (dwuliniowo w obrębie komórki), co usuwa zagięcie strony. Mediana błędu położenia linii na 13 zdjęciach: 1 px, 90. percentyl: 6 px (przy komórce 128 px).
+1. **Obrys siatki** – maska cienkich ciemnych struktur (black-hat), długie odcinki poziome i pionowe, największa spójna kratownica, cztery skrajne proste dopasowane odpornie (RANSAC) do obwiedni kratownicy, homografia. Z pikseli znalezionej kratownicy odczytywany jest kolor tuszu ramki (`siatka.tusz_ramki` w JSON) i z niego próg tuszu dla dalszych etapów – ramka zewnętrzna i linie wewnętrzne mają ten sam tusz, a stały próg zawodziłby przy innym druku lub oświetleniu.
+2. **Kratownica** – liczba wierszy i kolumn z autokorelacji masek linii; każda linia pozioma i pionowa śledzona jako krzywa (próbki położenia co ćwierć komórki); globalne pole deformacji (wielomian 2D, RANSAC z hipotezą kwadratową), potem lokalne doskakiwanie węzłów do linii. Obraz jest przepróbkowany do idealnie regularnej siatki (dwuliniowo w obrębie komórki), co usuwa zagięcie strony. Mediana błędu położenia linii na 13 zdjęciach: 1 px, 90. percentyl: 6 px (przy komórce 128 px).
 3. **Krawędzie** – dla każdej krawędzi komórki: brak / linia prosta / separator falisty (zygzak kończący wyraz: oscylacja środka ciężkości tuszu po usunięciu trendu).
 4. **Typy komórek** – litera / opis / rysunek / poza kadrem. Barwa tła (udziały RGB, odporne na cienie), udział tuszu, rozrzut koloru; rysunek jako prostokąt o maksymalnej sumie „rysunkowości”, rozszerzany o dymki i pasy z tekstem zagadki nadrukowanym na kratkach.
 5. **Ramki opisów** – obszar komórek typu opis po odjęciu „ścian” (długie proste odcinki tuszu i granice z komórkami innego typu); składowe spójne = ramki. Układ nie musi trzymać się siatki (kolumna opisów dzielona na N równych ramek, ramki na dwie kolumny itd.).

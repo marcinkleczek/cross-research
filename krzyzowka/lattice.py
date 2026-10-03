@@ -267,11 +267,11 @@ def _snap(mask: np.ndarray, X: np.ndarray, Y: np.ndarray, radius: float, half_wi
 
 
 def build_lattice(img_src: np.ndarray, img_warp: np.ndarray, H_src2warp: np.ndarray,
-                  cell: int = 128, rows: int | None = None, cols: int | None = None, model: str = "poly", snap: bool = True) -> Lattice:
+                  cell: int = 128, rows: int | None = None, cols: int | None = None, model: str = "poly", snap: bool = True, ink_thresh: int = 40) -> Lattice:
     Hw, Ww = img_warp.shape[:2]
     g = cv2.GaussianBlur(gray(img_warp), (3, 3), 0)
     line_px = max(2, int(round(max(Hw, Ww) / 500)))
-    thin = thin_dark(g, line_px)
+    thin = thin_dark(g, line_px, thresh=ink_thresh)
     min_len = int(0.025 * max(Hw, Ww))
     hor, ver = line_masks(thin, min_len)
     if rows is None or cols is None:
@@ -339,5 +339,5 @@ def build_lattice(img_src: np.ndarray, img_warp: np.ndarray, H_src2warp: np.ndar
               & (nodes_src[..., 1] > -margin) & (nodes_src[..., 1] < Hs + margin))
     outside = ~(inside[:-1, :-1] & inside[:-1, 1:] & inside[1:, :-1] & inside[1:, 1:])
     g2 = cv2.GaussianBlur(gray(rect), (3, 3), 0)
-    rect_thin = thin_dark(g2, max(2, cell // 40))
+    rect_thin = thin_dark(g2, max(2, cell // 40), thresh=ink_thresh)
     return Lattice(rows=rows, cols=cols, cell=cell, nodes_warp=nodes, nodes_src=nodes_src, rect=rect, rect_thin=rect_thin, outside=outside, map_x=map_x, map_y=map_y)

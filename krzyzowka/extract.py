@@ -19,7 +19,7 @@ from .arrows import find_arrows, ink_without_lines, detect_stems
 from .digits import find_numbers, assign_numbers
 from .words import build_words
 from .strip import extended_warp, find_strip
-from .debug import render_overlay
+from .debug import render_overlay, render_curves
 
 DIR_PL = {"prawo": "poziomo", "dol": "pionowo", "lewo": "poziomo_wstecz", "gora": "pionowo_wstecz"}
 
@@ -53,7 +53,7 @@ def analyze(path: str, out_dir: str, cell: int = 128, save_crops: bool = True) -
     img = load_rgb(path)
     q = find_grid(img)
     w, Hm = warp(img, q)
-    lat = build_lattice(img, w, Hm, cell=cell)
+    lat = build_lattice(img, w, Hm, cell=cell, ink_thresh=q.ink_thresh)
     rows, cols = lat.rows, lat.cols
     lm = line_mask(lat.rect, lat.rect_thin, cell)
     E = detect_edges(lm, rows, cols, cell)
@@ -67,7 +67,7 @@ def analyze(path: str, out_dir: str, cell: int = 128, save_crops: bool = True) -
     words, warn_w = build_words(types, E, arrows, boxes, cell)
     # pasek rozwiązania
     ext, Hext, grid_h, ext_x0 = extended_warp(img, q, scale=(cols * cell) / q.width)
-    strip, warn_s = find_strip(ext, grid_h, cell)
+    strip, warn_s = find_strip(ext, grid_h, cell, ink_thresh=q.ink_thresh)
     cands = find_numbers(types, nolines, cell, [a.bbox for a in arrows])
     numbers, warn_n = assign_numbers(cands, strip.total or None)
     num_at = {(c.row, c.col): v for v, c in numbers.items()}
@@ -87,6 +87,8 @@ def analyze(path: str, out_dir: str, cell: int = 128, save_crops: bool = True) -
         "wersja": __version__,
         "siatka": {
             "wiersze": rows, "kolumny": cols, "bok_komorki_px": cell,
+            "tusz_ramki": {"rgb": list(q.frame_rgb), "jasnosc": round(q.frame_gray, 1), "jasnosc_tla": round(q.page_gray, 1),
+                           "prog_black_hat": q.ink_thresh},
             "narozniki_na_zdjeciu": q.corners.round(1).tolist(),
             "wezly_na_zdjeciu": lat.nodes_src.round(1).tolist(),
         },
@@ -168,4 +170,6 @@ def analyze(path: str, out_dir: str, cell: int = 128, save_crops: bool = True) -
     overlay = render_overlay(lat, types, E, boxes, arrows, words, numbers)
     cv2.imwrite(os.path.join(out_dir, "naklad.jpg"), cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 80])
     cv2.imwrite(os.path.join(out_dir, "siatka.jpg"), cv2.cvtColor(lat.rect, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
+    curves = render_curves(img, q, lat, pic)
+    cv2.imwrite(os.path.join(out_dir, "krzywe.jpg"), cv2.cvtColor(curves, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 80])
     return result

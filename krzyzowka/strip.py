@@ -61,7 +61,7 @@ def _runs(flags: np.ndarray, merge_gap: int) -> list[tuple[int, int]]:
     return [(a, b) for a, b in out]
 
 
-def find_strip(ext: np.ndarray, grid_h: int, cell: int) -> tuple[Strip, list[str]]:
+def find_strip(ext: np.ndarray, grid_h: int, cell: int, ink_thresh: int = 40) -> tuple[Strip, list[str]]:
     """Pasek rozwiązania: pasma między kolejnymi długimi liniami poziomymi pod siatką o wysokości
     0.3-0.8 komórki; w pasmie pola wyznaczają linie pionowe (przerwy o szerokości zbliżonej do mediany),
     a kreska wyraźnie grubsza od pozostałych to granica słowa."""
@@ -69,7 +69,7 @@ def find_strip(ext: np.ndarray, grid_h: int, cell: int) -> tuple[Strip, list[str
     strip = Strip()
     g = cv2.GaussianBlur(gray(ext), (3, 3), 0)
     # niższy próg black-hat: skrajna kreska paska graniczy z ciemnym tłem strony (słabszy kontrast)
-    thin = thin_dark(g, max(2, cell // 40), thresh=22)
+    thin = thin_dark(g, max(2, cell // 40), thresh=max(12, int(0.55 * ink_thresh)))
     region = thin.copy(); region[:grid_h + int(0.5 * cell)] = 0
     hor, ver = line_masks(region, int(0.25 * cell))
     H, W = region.shape

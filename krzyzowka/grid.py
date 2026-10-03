@@ -19,6 +19,29 @@ class GridQuad:
     corners: np.ndarray  # 4x2 float32, kolejność: LG, PG, PD, LD (piksele obrazu wejściowego)
     width: int           # szerokość prostokąta docelowego (w pikselach obrazu wejściowego)
     height: int
+    ink_thresh: int = 40         # próg odpowiedzi black-hat dla tuszu linii, wyznaczony z koloru ramki
+    frame_gray: float = 0.0      # jasność tuszu linii siatki (mediana wzdłuż wykrytej kratownicy)
+    frame_rgb: tuple = (0, 0, 0) # kolor tuszu linii siatki (mediana RGB)
+    page_gray: float = 255.0     # jasność tła w otoczeniu linii
+
+
+def frame_ink(g: np.ndarray, rgb: np.ndarray, lattice: np.ndarray, line_px: int) -> tuple[int, float, tuple, float]:
+    """Kalibracja progu tuszu z koloru samej kratownicy (ramka zewnętrzna i linie mają ten sam tusz):
+    mediana odpowiedzi black-hat na pikselach kratownicy, próg = 0.45 tej wartości (zakres 15..70).
+    Zwraca (próg, jasność tuszu, kolor RGB tuszu, jasność tła obok linii)."""
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (6 * line_px + 1, 6 * line_px + 1))
+    bh = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, k)
+    m = lattice > 0
+    if m.sum() < 100:
+        return 40, float(np.median(g)), (0, 0, 0), float(np.median(g))
+    contrast = float(np.median(bh[m]))
+    thresh = int(np.clip(round(0.45 * contrast), 15, 70))
+    ink_gray = float(np.median(g[m]))
+    ink_rgb = tuple(int(v) for v in np.median(rgb[m].reshape(-1, 3), axis=0))
+    ring = cv2.dilate(lattice, cv2.getStructuringElement(cv2.MORPH_RECT, (4 * line_px + 1, 4 * line_px + 1))) > 0
+    ring &= ~m
+    page_gray = float(np.median(g[ring])) if ring.any() else 255.0
+    return thresh, ink_gray, ink_rgb, page_gray
 
 
 def thin_dark(g: np.ndarray, line_px: int, thresh: int = 40) -> np.ndarray:
@@ -145,6 +168,10 @@ def find_grid(img_rgb: np.ndarray, work_long: int = 1600) -> GridQuad:
     hor, ver = line_masks(thin, min_len)
     lines = cv2.bitwise_or(hor, ver)
     lat = lattice_component(lines, gap=3 * line_px)
+    # kalibracja progu tuszu z koloru znalezionej kratownicy (ramka zewnętrzna i linie mają ten sam tusz);
+    # próg służy dalszym etapom (śledzenie linii, krawędzie, pasek). Obrys zostaje z pierwszego przebiegu:
+    # niższy próg łączy kratownicę z elementami obok (nagłówek, pasek) i psuje skrajne proste.
+    ink_thresh, frame_gray, frame_rgb, page_gray = frame_ink(g, small, lat, line_px)
     ys_all, xs_all = np.nonzero(lat)
     x0, x1 = xs_all.min(), xs_all.max(); y0, y1 = ys_all.min(), ys_all.max()
     tol = 2.0 * line_px
@@ -168,7 +195,8 @@ def find_grid(img_rgb: np.ndarray, work_long: int = 1600) -> GridQuad:
     quad /= s
     wA = np.linalg.norm(quad[1] - quad[0]); wB = np.linalg.norm(quad[2] - quad[3])
     hA = np.linalg.norm(quad[3] - quad[0]); hB = np.linalg.norm(quad[2] - quad[1])
-    return GridQuad(corners=quad, width=int(round((wA + wB) / 2)), height=int(round((hA + hB) / 2)))
+    return GridQuad(corners=quad, width=int(round((wA + wB) / 2)), height=int(round((hA + hB) / 2)),
+                    ink_thresh=ink_thresh, frame_gray=frame_gray, frame_rgb=frame_rgb, page_gray=page_gray)
 
 
 def warp(img_rgb: np.ndarray, q: GridQuad, margin: int = 0, scale: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
