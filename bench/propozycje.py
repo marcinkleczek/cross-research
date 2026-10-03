@@ -61,9 +61,13 @@ def zbierz(con, modele: list[str], krzyzowka: str | None = None, opoznienie: flo
     return stat
 
 
+WAGI_DOMYSLNE = {"claude_cli": 0.8, "openrouter": 0.5, "ollama": 0.5, "ollama_local": 0.4}
+
+
 def wagi_modeli(con) -> dict[str, float]:
-    """Waga modelu = trafność ścisła na hasłach z kluczem (z uruchomień), domyślnie 0.5."""
-    out = {}
+    """Waga modelu = trafność ścisła na hasłach z kluczem (z uruchomień, >= 10 odpowiedzi);
+    bez danych: domyślna wg dostawcy (Claude 0.8, pozostałe 0.5)."""
+    out = {r["id"]: WAGI_DOMYSLNE.get(r["dostawca"], 0.5) for r in db.rows(con, "SELECT id, dostawca FROM modele")}
     for r in db.rows(con, """SELECT u.model_id, AVG(o.poprawna) t, COUNT(*) n FROM odpowiedzi o JOIN uruchomienia u ON u.id=o.uruchomienie_id
                              WHERE o.blad IS NULL AND u.wariant='z_dlugoscia' GROUP BY u.model_id"""):
         if r["n"] >= 10:
@@ -137,12 +141,22 @@ def uzgodnij(con, krzyzowka: str, rundy: int = 4) -> dict:
             for i, c in enumerate(cells_of[hid]):
                 grid_letters[c][w[i]].append(hid)
     konflikty_cell = {c: dict(v) for c, v in grid_letters.items() if len(v) > 1}
+    # konflikt obciąża słabszą stronę: hasło z niższym wynikiem w spornej kratce (klucz ręczny nigdy)
+    def strength(hid):
+        w = best.get(hid); return cand_scores[hid].get(w, 0.0) if w else 0.0
+    winy: dict[str, list] = defaultdict(list)
+    for c, v in konflikty_cell.items():
+        hids = [hid for lst in v.values() for hid in lst]
+        top = max(hids, key=strength)
+        for hid in hids:
+            if hid != top:
+                winy[hid].append(c)
     out = []
     for h in hasla:
         hid = h["id"]; w = best.get(hid)
         sc = cand_scores[hid]
         ranked = sorted(sc.items(), key=lambda x: -x[1])
-        konfl = [c for c in cells_of[hid] if c in konflikty_cell]
+        konfl = winy.get(hid, [])
         alt = [c for c, s in ranked if w and c != w and s >= 0.6 * sc.get(w, 0)]
         out.append({"haslo_id": hid, "nr": h["nr"], "opis": h["opis"], "dlugosc": h["dlugosc"], "kierunek": h["kierunek"], "litery": cells_of[hid],
                     "klucz": h["odpowiedz"], "alternatywy": h["alternatywy"], "gotowe": h["gotowe"],
