@@ -109,7 +109,7 @@ async function render(){
     const s=await api('/api/ocr/stan');
     m.innerHTML=`<div class="k"><h2>OCR opisów przez Claude Code (claude -p)</h2>
       <p class="muted">Każdy wycinek ramki jest czytany narzędziem Read, odpowiedź wymuszona schematem JSON. Koszt rozliczany w abonamencie Claude Code. Do odczytu: <b>${s.do_odczytu}</b>. Statusy: ${s.statusy.map(x=>`${x.ocr_status} ${x.n}`).join(' · ')}</p>
-      <div class="form"><label>Model<select id="ocr_model"><option>haiku</option><option>sonnet</option><option>opus</option></select></label>
+      <div class="form"><label>Model<select id="ocr_model"><option>sonnet</option><option>haiku</option><option>opus</option></select></label>
       <label>Krzyżówka<select id="ocr_krz"><option value="">wszystkie</option>${Object.entries(s.per_krzyzowka).map(([k,n])=>`<option value="${k}">${k} (${n})</option>`).join('')}</select></label>
       <label>Limit<input id="ocr_limit" class="short" type="number" placeholder="∞"></label><label>Opóźnienie [s]<input id="ocr_op" class="short" type="number" step="0.1" value="0.5"></label>
       <button class="p" ${s.trwa?'disabled':''} onclick="ocrStart()">Start</button><button ${s.trwa?'':'disabled'} onclick="api('/api/ocr/stop',{}).then(render)">Stop</button>

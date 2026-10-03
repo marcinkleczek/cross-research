@@ -105,7 +105,7 @@ Baza SQLite (`bench.sqlite`, ścieżka w `BENCH_DB`) z tabelami: `krzyzowki`, `r
 ```bash
 python -m bench.importer output                 # import wyników ekstrakcji
 python -m bench.ocr lista                       # ile ramek czeka na odczyt
-python -m bench.ocr uruchom --model haiku       # OCR opisów przez Claude Code (claude -p, narzędzie Read, --json-schema)
+python -m bench.ocr uruchom --model sonnet      # OCR opisów przez Claude Code (claude -p, narzędzie Read, --json-schema); haiku myli polskie znaki
 python -m bench.runner modele                   # rejestr: darmowe modele OpenRouter, Ollama (lokalna lub chmura), claude_cli
 python -m bench.runner dodaj --model claude_cli:haiku --wariant z_dlugoscia --limit 100
 python -m bench.runner start                    # worker: wykonuje kolejkę po kolei

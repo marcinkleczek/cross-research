@@ -153,7 +153,7 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if p == "/api/ocr/start":
                 if _ocr_state["trwa"]: return self._json({"blad": "OCR już trwa"}, 409)
-                threading.Thread(target=ocr_thread, args=(b.get("model", "haiku"), b.get("krzyzowka") or None, int(b["limit"]) if b.get("limit") else None, float(b.get("opoznienie", 0.5))), daemon=True).start()
+                threading.Thread(target=ocr_thread, args=(b.get("model", "sonnet"), b.get("krzyzowka") or None, int(b["limit"]) if b.get("limit") else None, float(b.get("opoznienie", 0.5))), daemon=True).start()
                 return self._json({"ok": True})
             if p == "/api/ocr/stop":
                 _ocr_state["stop"] = True; return self._json({"ok": True})

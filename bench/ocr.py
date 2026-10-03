@@ -1,5 +1,8 @@
 """OCR treści opisów przez Claude Code z linii poleceń (`claude -p`), model do wyboru.
 
+Domyślnie sonnet: w próbie na wycinkach z polskimi znakami haiku mylił diakrytykę (Grożna, skrzyzowanie,
+niecheć, Bawarie), sonnet odczytał wszystkie poprawnie przy podobnym czasie (~6 s na wycinek).
+
 Przebieg: lista ramek bez tekstu -> dla każdej wycinek PNG -> `claude -p` z narzędziem Read i `--json-schema`
 -> tekst do bazy (ramki.tekst_ocr, ramki.tekst, hasla.opis). Wznawialne: pomija ramki już odczytane.
 
@@ -87,7 +90,7 @@ def ocr_one(con, ramka: dict, model: str) -> dict:
     return {"ok": True, "tekst": tekst, "czas_ms": res["czas_ms"], "koszt": res.get("koszt"), "pewnosc": res["dane"].get("pewnosc")}
 
 
-def run(con, model: str = "haiku", limit: int | None = None, krzyzowka: str | None = None, opoznienie: float = 0.5, stop=None):
+def run(con, model: str = "sonnet", limit: int | None = None, krzyzowka: str | None = None, opoznienie: float = 0.5, stop=None):
     lst = pending(con, krzyzowka)
     if limit:
         lst = lst[:limit]
@@ -112,7 +115,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("lista")
     u = sub.add_parser("uruchom")
-    u.add_argument("--model", default="haiku")
+    u.add_argument("--model", default="sonnet")
     u.add_argument("--limit", type=int)
     u.add_argument("--krzyzowka")
     u.add_argument("--opoznienie", type=float, default=0.5)
