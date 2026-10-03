@@ -3,6 +3,7 @@
   python -m bench.runner modele                     # odśwież rejestr modeli (darmowe OpenRouter, Ollama, claude_cli)
   python -m bench.runner dodaj --model openrouter:qwen/qwen3.8-27b:free --wariant z_dlugoscia [--limit 200] [--opoznienie 2]
   python -m bench.runner start                      # worker: wykonuje kolejne uruchomienia z kolejki, aż będzie pusta
+  python -m bench.runner start --dostawca ollama    # worker tylko dla jednego dostawcy; po jednym na dostawcę działa równolegle
   python -m bench.runner start --jedno ID           # tylko wskazane
 """
 from __future__ import annotations
@@ -115,6 +116,7 @@ def run_one(con, run_id: int) -> None:
             if h["id"] in done_ids:
                 continue
             db.set_setting(con, "worker_heartbeat", {"at": time.time(), "uruchomienie": run_id, "pid": os.getpid()})
+            db.set_setting(con, f"worker_heartbeat_{os.getpid()}", {"at": time.time(), "uruchomienie": run_id})
             user, extra = tasks.build_prompt(h, run["wariant"], pool, przyklady=bool(par.get("przyklady")))
             res = prov.generate(model["nazwa"], tasks.SYSTEM, user, schema=tasks.SCHEMA, temperature=float(par.get("temperatura", 0.0)), max_tokens=int(par.get("max_tokens", 300)))
             sc = tasks.score(h, res.get("parsed"), res.get("text"), extra) if not res.get("blad") else {}
@@ -159,17 +161,30 @@ def stop(run_id: int):
     _stop_flags[run_id] = True
 
 
-def worker_loop(con, only: int | None = None):
+def claim_next(con, dostawca: str | None = None):
+    """Atomowo przejmuje następne uruchomienie z kolejki (kilka workerów może działać równolegle, np. po jednym na dostawcę)."""
+    sql = "SELECT u.id FROM uruchomienia u JOIN modele m ON m.id=u.model_id WHERE u.status='w_kolejce'"
+    args = []
+    if dostawca:
+        sql += " AND m.dostawca=?"; args.append(dostawca)
+    for cand in db.rows(con, sql + " ORDER BY u.priorytet, u.id LIMIT 5", args):
+        cur = db.execute(con, "UPDATE uruchomienia SET status='trwa' WHERE id=? AND status='w_kolejce'", (cand["id"],))
+        if cur.rowcount == 1:
+            return cand["id"]
+    return None
+
+
+def worker_loop(con, only: int | None = None, dostawca: str | None = None):
     deferred_streak = 0
     while True:
         if only:
             run_one(con, only); return
-        nxt = db.one(con, "SELECT id FROM uruchomienia WHERE status='w_kolejce' ORDER BY priorytet, id LIMIT 1")
-        if not nxt:
+        rid = claim_next(con, dostawca)
+        if rid is None:
             return
-        if run_one(con, nxt["id"]) == "odlozone":
+        if run_one(con, rid) == "odlozone":
             deferred_streak += 1
-            pending = db.one(con, "SELECT COUNT(*) n FROM uruchomienia WHERE status='w_kolejce'")["n"]
+            pending = db.one(con, "SELECT COUNT(*) n FROM uruchomienia u JOIN modele m ON m.id=u.model_id WHERE u.status='w_kolejce'" + (" AND m.dostawca=?" if dostawca else ""), (dostawca,) if dostawca else ())["n"]
             if deferred_streak >= pending:  # wszystkie czekające odłożone z rzędu: przerwa, by limity minęły
                 wait = min(900, 60 * deferred_streak)
                 db.log(con, "kolejka", f"wszystkie uruchomienia odłożone; przerwa {wait} s")
@@ -178,13 +193,13 @@ def worker_loop(con, only: int | None = None):
             deferred_streak = 0
 
 
-def start_background(only: int | None = None) -> bool:
+def start_background(only: int | None = None, dostawca: str | None = None) -> bool:
     """Worker w wątku (dla pulpitu). Zwraca False, gdy już działa."""
     global _worker_thread
     if _worker_thread and _worker_thread.is_alive():
         return False
     con = db.init()
-    _worker_thread = threading.Thread(target=worker_loop, args=(con, only), daemon=True)
+    _worker_thread = threading.Thread(target=worker_loop, args=(con, only, dostawca), daemon=True)
     _worker_thread.start()
     return True
 
@@ -205,7 +220,7 @@ def main(argv=None):
     sub.add_parser("modele")
     a = sub.add_parser("dodaj"); a.add_argument("--model", required=True); a.add_argument("--wariant", required=True, choices=tasks.WARIANTY)
     a.add_argument("--limit", type=int); a.add_argument("--opoznienie", type=float, default=1.0); a.add_argument("--przyklady", action="store_true"); a.add_argument("--krzyzowka", action="append")
-    s = sub.add_parser("start"); s.add_argument("--jedno", type=int)
+    s = sub.add_parser("start"); s.add_argument("--jedno", type=int); s.add_argument("--dostawca", choices=list(providers.PROVIDERS), help="tylko uruchomienia tego dostawcy (po jednym workerze na dostawcę = równolegle)")
     args = ap.parse_args(argv)
     con = db.init()
     if args.cmd == "modele":
@@ -216,7 +231,7 @@ def main(argv=None):
         if args.krzyzowka: pod["krzyzowki"] = args.krzyzowka
         print("uruchomienie", add_run(con, args.model, args.wariant, pod, {"opoznienie_s": args.opoznienie, "przyklady": args.przyklady}))
     else:
-        worker_loop(con, args.jedno)
+        worker_loop(con, args.jedno, args.dostawca)
 
 
 if __name__ == "__main__":
