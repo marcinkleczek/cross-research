@@ -121,3 +121,17 @@ Zmienne środowiskowe: `OPENROUTER_API_KEY`, `OLLAMA_HOST` (domyślnie `http://1
 **Dostawcy**: `ollama` (`/api/chat`, `format` = schemat), `openrouter` (zgodny z OpenAI, `response_format` ze schematem, awaryjnie bez), `claude_cli` (`claude -p --model … --json-schema …`, bez narzędzi, jedna tura; rozliczane w abonamencie Claude Code). Każdy błąd 429/5xx jest ponawiany z rosnącym odstępem; wszystkie uruchomienia są wznawialne (odpowiedzi zapisane nie są powtarzane).
 
 Do benchmarku trafiają wyłącznie hasła z flagą `gotowe=1` (opis zweryfikowany, odpowiedź z klucza). `bench/probka.py` ustawia kilkadziesiąt odpowiedzi ręcznych (`zrodlo_odpowiedzi='probka_reczna'`) wyłącznie do testu potoku.
+
+## Wygląd interfejsów
+
+Wszystkie trzy interfejsy (wgrywanie, pulpit benchmarku, przeglądarka wyników) używają wspólnego arkusza `app/static/carbon.css` napisanego w konwencji IBM Carbon Design System v11: tokeny motywów White i Gray 100 (automatycznie wg ustawień systemu lub `data-theme`), siatka odstępów 8 px, IBM Plex Sans/Mono, ostre narożniki, pasek UI Shell 48 px, tabele danych o wierszach 48 px, przyciski z tekstem do lewej, pola z dolną krawędzią, znaczniki, 2‑px obrys fokusu. Kolor wiodący: zieleń Carbon (green 70 `#0e6027` jako interaktywny w motywie jasnym, green 80 `#044317` w pasku, green 50 `#24a148` w ciemnym). Arkusz jest własny (bez zależności od pakietów Carbon), żeby strony działały bez dostępu do sieci poza czcionkami Google.
+
+## Przebieg próbny (23 hasła z IMG_1803, odpowiedzi ręczne, model claude_cli:haiku)
+
+| wariant | trafność ścisła | 95 % PU | top‑5 | ECE | mediana ms |
+|---|---|---|---|---|---|
+| bez długości | 52 % | 30–74 | 74 % | 0,34 | 7992 |
+| z długością | 73 % | 50–91 | 73 % | 0,12 | 10556 |
+| wybór z 5 | 96 % | 87–100 | 96 % | 0,08 | 6701 |
+
+Próbka jest za mała na wnioski; przebieg potwierdza jedynie, że potok (prompt, schemat, ocena, metryki, pulpit) działa od końca do końca. Przy małej puli odpowiedzi dystraktory w wariancie `wybor5` są częściowo syntetyczne (zamiana litery), więc wariant jest wtedy zbyt łatwy; przy pełnym zbiorze dystraktory pochodzą z prawdziwych haseł tej samej długości.

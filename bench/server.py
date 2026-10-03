@@ -112,8 +112,12 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/zdarzenia":
                 return self._json(db.rows(con, "SELECT * FROM zdarzenia ORDER BY id DESC LIMIT 100"))
             if p.startswith("/static/"):
-                f = os.path.join(STATIC, os.path.basename(p))
-                return self._send(200, open(f, "rb").read(), mimetypes.guess_type(f)[0] or "application/octet-stream") if os.path.isfile(f) else self._send(404, b"brak")
+                name = os.path.basename(p)
+                for d in (STATIC, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "static")):
+                    f = os.path.join(d, name)
+                    if os.path.isfile(f):
+                        return self._send(200, open(f, "rb").read(), mimetypes.guess_type(f)[0] or "application/octet-stream")
+                return self._send(404, b"brak")
             return self._send(404, b"nie znaleziono")
         except Exception as e:  # noqa: BLE001
             import traceback; return self._json({"blad": str(e), "slad": traceback.format_exc()[-1500:]}, 500)

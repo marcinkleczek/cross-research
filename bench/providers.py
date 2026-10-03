@@ -149,7 +149,7 @@ class ClaudeCLI:
 
     def generate(self, model: str, system: str, user: str, schema: dict | None = None, temperature: float = 0.0, max_tokens: int = 300, seed: int = 7) -> dict:
         prompt = system + "\n\n" + user
-        cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json", "--max-turns", "1", "--tools", "", "--permission-mode", "dontAsk"]
+        cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json", "--max-turns", "3", "--tools", "", "--permission-mode", "dontAsk"]
         if schema:
             cmd += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
         t = time.time()
