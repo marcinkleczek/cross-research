@@ -112,7 +112,7 @@ python -m bench.runner start                    # worker: wykonuje kolejkę po k
 python -m bench.server --port 8010              # pulpit: etapy, dane, OCR, modele, kolejka, wyniki
 ```
 
-Zmienne środowiskowe: `OPENROUTER_API_KEY`, `OLLAMA_HOST` (domyślnie `http://127.0.0.1:11434`; chmura: `https://ollama.com` z `OLLAMA_API_KEY`).
+Klucze: skopiuj `.env.example` do `.env` i uzupełnij `OPENROUTER_API_KEY`, `OLLAMA_API_KEY` (chmura `https://ollama.com`) lub ustaw `OLLAMA_HOST` na lokalny serwer (`http://127.0.0.1:11434`). Plik `.env` jest w `.gitignore` i jest wczytywany automatycznie przez pakiet `bench`; klucze nigdy nie są zapisywane w bazie ani w repozytorium.
 
 **Warianty zadań** (etap 1, pojedyncze hasła): `bez_dlugosci`, `z_dlugoscia`, `wzorzec25`, `wzorzec50` (odsłonięte litery losowane deterministycznie z id hasła), `wybor5` (4 dystraktory tej samej długości z puli odpowiedzi). Prompt i schemat JSON odpowiedzi są wspólne dla wszystkich dostawców (`bench/tasks.py`).
 
