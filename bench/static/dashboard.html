@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Benchmark krzyżówek – pulpit</title>
+<link rel="stylesheet" href="/static/carbon.css">
+<style>
+  .etapy li { display: grid; gap: .25rem; padding: .5rem 0; border-bottom: 1px solid var(--cds-border-subtle-01); }
+  .etapy li:last-child { border-bottom: 0; }
+  .etapy .l { display: flex; justify-content: space-between; gap: 1rem; }
+  .etapy .done .l::before { content: "✓"; color: var(--cds-support-success); margin-right: .5rem; }
+  .etapy .todo-item .l::before { content: "○"; color: var(--cds-text-helper); margin-right: .5rem; }
+  .form .cds--form-item { min-width: 7rem; }
+  .form .cds--select-input[multiple] { min-width: 16rem; }
+  .form .short { width: 6rem; }
+  .pre-wrap { white-space: pre-wrap; }
+  .crop { height: 2.75rem; width: auto; background: #fff; border: 1px solid var(--cds-border-subtle-01); display: block; }
+  .kat td:first-child { width: 14rem; }
+  @media (max-width: 40rem) { .cds--header__global { display: none; } }
+</style>
+</head>
+<body>
+<header class="cds--header">
+  <div class="cds--header__name"><span>Krzyżówki</span>Benchmark</div>
+  <nav class="cds--header__nav" id="nav" aria-label="Sekcje">
+    <button data-t="przeglad" aria-selected="true">Przegląd</button>
+    <button data-t="dane">Dane</button>
+    <button data-t="ocr">OCR</button>
+    <button data-t="modele">Modele</button>
+    <button data-t="kolejka">Kolejka</button>
+    <button data-t="wyniki">Wyniki</button>
+  </nav>
+  <div class="cds--header__global" id="worker"></div>
+</header>
+<main class="cds--content" id="main"></main>
+<div id="msg" class="cds--toast" role="status"></div>
+<script>
+const $=s=>document.querySelector(s);
+const api=async(u,b)=>{const r=await fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:undefined);const j=await r.json().catch(()=>({}));if(!r.ok||j.blad){msg(j.blad||r.statusText,true);throw new Error(j.blad||r.statusText)}return j};
+const msg=(t,err)=>{const m=$('#msg');m.textContent=t;m.className='cds--toast'+(err?' cds--toast--error':'');m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',5000)};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct=(a,b)=>b?Math.round(100*a/b):0;
+const fmtT=s=>s?new Date(s*1000).toLocaleString('pl-PL'):'';
+const dur=(a,b)=>{if(!a)return'';const d=((b||Date.now()/1000)-a);return d<90?`${Math.round(d)} s`:d<5400?`${(d/60).toFixed(1)} min`:`${(d/3600).toFixed(1)} h`};
+const ci=m=>m&&m.srednia!=null?`${(100*m.srednia).toFixed(1)} % <span class="cds--text-secondary">[${(100*m.ci_dol).toFixed(0)}–${(100*m.ci_gora).toFixed(0)}]</span>`:'–';
+const tag=(t,k)=>`<span class="cds--tag ${k?'cds--tag--'+k:''}">${esc(t)}</span>`;
+const stTag=s=>tag(s,{trwa:'teal',zakonczone:'green',blad:'red',wstrzymane:'yellow',w_kolejce:''}[s]||'');
+const meter=(a,b)=>`<div class="cds--progress cds--progress--thin"><i style="width:${pct(a,b)}%"></i></div>`;
+const T=(head,rows,cls='')=>`<div class="cds--data-table-container"><table class="cds--data-table ${cls}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+let TAB='przeglad', SL=null, STATE={krz:null};
+document.querySelector('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(!b)return;TAB=b.dataset.t;document.querySelectorAll('#nav button').forEach(x=>x.setAttribute('aria-selected',x===b));render();});
+
+async function render(){
+  SL=SL||await api('/api/slowniki');
+  const m=$('#main');
+  if(TAB==='przeglad'){
+    const d=await api('/api/przeglad'); const u=d.uruchomienia||{};
+    const steps=[
+      ['Zdjęcia w input/',d.zdjecia_w_input,null],
+      ['Krzyżówki przeanalizowane i zaimportowane',d.krzyzowki,d.zdjecia_w_input],
+      ['Ramki opisów odczytane (OCR)',d.ramki_ocr,d.ramki],
+      ['Ramki zweryfikowane ręcznie',d.ramki_zweryfikowane,d.ramki],
+      ['Hasła z odpowiedzią (klucz)',d.hasla_z_odpowiedzia,d.hasla],
+      ['Hasła z kategorią',d.hasla_z_kategoria,d.hasla],
+      ['Hasła gotowe do benchmarku',d.hasla_gotowe,d.hasla],
+      ['Modele aktywne (w tym darmowe)',`${d.modele} (${d.modele_darmowe})`,null],
+      ['Uruchomienia zakończone',u.zakonczone||0,Object.values(u).reduce((a,b)=>a+b,0)],
+    ];
+    m.innerHTML=`<div class="cds--grid">
+      <section class="cds--tile"><h2 class="cds--type-heading-03">Etapy</h2>
+        <ol class="etapy" style="list-style:none;margin:0;padding:0">${steps.map(([n,a,b])=>`<li class="${b&&a>=b?'done':'todo-item'}"><div class="l"><span>${n}</span><b class="cds--tabular">${a??'–'}${b?` / ${b}`:''}</b></div>${b?meter(a,b):''}</li>`).join('')}</ol>
+        <h3 class="cds--section-title">Co dalej</h3><ol class="cds--list">
+        <li>Zdjęcia → <code>python -m krzyzowka.cli input -o output</code> → import (Dane).</li>
+        <li>OCR opisów przez Claude Code (OCR), potem korekta ręczna.</li>
+        <li>Odpowiedzi z klucza, kategorie, oznaczenie „gotowe”.</li>
+        <li>Rejestr modeli, kolejka uruchomień, worker.</li></ol></section>
+      <section class="cds--tile"><h2 class="cds--type-heading-03">Liczby</h2>
+        <div class="cds--grid" style="grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));gap:1rem">
+        ${[['krzyżówki',d.krzyzowki],['ramki',d.ramki],['hasła',d.hasla],['gotowe',d.hasla_gotowe],['modele',d.modele],['odpowiedzi',d.odpowiedzi],['koszt USD',(d.koszt_usd||0).toFixed(2)]].map(([n,v])=>`<div class="cds--stat"><b>${v}</b><small>${n}</small></div>`).join('')}</div>
+        <h3 class="cds--section-title">Kolejka</h3><div class="cds--row" style="gap:.5rem">${Object.keys(u).length?Object.entries(u).map(([s,n])=>stTag(`${s}: ${n}`).replace('>'+esc(`${s}: ${n}`),'>'+esc(`${s}: ${n}`))).join(''):'<span class="cds--text-helper">pusto</span>'}</div>
+        <p class="cds--type-helper-text-01">worker: ${d.worker?'<span class="cds--success">działa</span>':'nie działa'} · OCR: ${d.ocr.trwa?'<span class="cds--success">trwa</span>':'nie trwa'}</p>
+        <h3 class="cds--section-title">Klucze i połączenia</h3>
+        <div class="cds--mono">OPENROUTER_API_KEY: ${d.klucze.OPENROUTER_API_KEY?'<span class="cds--success">jest</span>':'<span class="cds--error">brak</span>'} · OLLAMA_API_KEY: ${d.klucze.OLLAMA_API_KEY?'<span class="cds--success">jest</span>':'brak'} · OLLAMA_HOST: ${esc(d.klucze.OLLAMA_HOST)} · claude: CLI</div>
+        <h3 class="cds--section-title">Gotowe hasła wg kategorii</h3>
+        <table class="cds--structured-list kat"><tbody>${d.kategorie.map(r=>`<tr><td>${esc(r.kategoria)}</td><td class="cds--num cds--tabular">${r.n}</td><td style="width:40%"><div class="cds--data-bar"><i style="width:${pct(r.n,d.hasla_gotowe||1)}%"></i></div></td></tr>`).join('')||'<tr><td class="cds--text-helper">brak gotowych haseł</td></tr>'}</tbody></table>
+        <p class="cds--type-helper-text-01">polskość: ${d.polskosc.map(r=>`${esc(r.polskosc)} ${r.n}`).join(' · ')||'–'}</p></section>
+      <section class="cds--tile"><h2 class="cds--type-heading-03">Ostatnie zdarzenia</h2>
+        <table class="cds--structured-list"><tbody>${d.zdarzenia.map(z=>`<tr><td class="cds--mono cds--text-secondary" style="white-space:nowrap">${fmtT(z.at)}</td><td>${tag(z.typ)}</td><td>${esc(z.tresc)}</td></tr>`).join('')}</tbody></table></section>
+    </div>`;
+  }
+  if(TAB==='dane'){
+    const ks=await api('/api/krzyzowki');
+    m.innerHTML=`<div class="cds--stack">
+    <div class="cds--row"><button class="cds--btn cds--btn--tertiary" onclick="imp()">Importuj wyniki z output/</button><span class="cds--type-helper-text-01">Importuje output/*/wynik.json; istniejące odpowiedzi i etykiety są zachowywane.</span></div>
+    <section><h2 class="cds--type-heading-03" style="margin-bottom:.5rem">Krzyżówki</h2>
+    ${T(`<th>Id</th><th>Źródło</th><th class="cds--num">Siatka</th><th class="cds--num">Ramki</th><th class="cds--num">OCR</th><th class="cds--num">Hasła</th><th class="cds--num">Z odpowiedzią</th><th class="cds--num">Gotowe</th><th class="cds--num">Pasek</th><th></th>`,
+      ks.map(k=>`<tr><td class="cds--mono">${k.id}</td><td>${esc(k.zrodlo||'')}</td><td class="cds--num">${k.wiersze}×${k.kolumny}</td><td class="cds--num">${k.liczba_ramek}</td><td class="cds--num">${k.ocr_gotowe}</td><td class="cds--num">${k.liczba_hasel}</td><td class="cds--num">${k.z_odpowiedzia}</td><td class="cds--num">${k.gotowe}</td><td class="cds--num">${k.pasek_pol??'–'}</td><td><button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="hasla('${k.id}')">Hasła</button></td></tr>`).join(''))}</section>
+    <div id="hasla"></div></div>`;
+    if(STATE.krz) hasla(STATE.krz);
+  }
+  if(TAB==='ocr'){
+    const s=await api('/api/ocr/stan');
+    m.innerHTML=`<section class="cds--tile"><h2 class="cds--type-heading-03">OCR opisów przez Claude Code (claude -p)</h2>
+      <p class="cds--type-body-01" style="max-width:70ch">Każdy wycinek ramki jest czytany narzędziem Read, odpowiedź wymuszona schematem JSON. Koszt rozliczany w abonamencie Claude Code. Sonnet czyta polskie znaki poprawnie; haiku je myli.</p>
+      <div class="cds--row" style="margin-bottom:1rem">${tag('do odczytu: '+s.do_odczytu,'teal')} ${s.statusy.map(x=>tag(`${x.ocr_status}: ${x.n}`, x.ocr_status==='gotowe'?'green':x.ocr_status==='blad'?'red':'')).join(' ')}</div>
+      <div class="cds--row form">
+        <label class="cds--form-item"><span class="cds--label">Model</span><select id="ocr_model" class="cds--select-input"><option>sonnet</option><option>haiku</option><option>opus</option></select></label>
+        <label class="cds--form-item"><span class="cds--label">Krzyżówka</span><select id="ocr_krz" class="cds--select-input"><option value="">wszystkie</option>${Object.entries(s.per_krzyzowka).map(([k,n])=>`<option value="${k}">${k} (${n})</option>`).join('')}</select></label>
+        <label class="cds--form-item"><span class="cds--label">Limit</span><input id="ocr_limit" class="cds--text-input short" type="number" placeholder="∞"></label>
+        <label class="cds--form-item"><span class="cds--label">Opóźnienie [s]</span><input id="ocr_op" class="cds--text-input short" type="number" step="0.1" value="0.5"></label>
+        <div class="cds--btn-set"><button class="cds--btn" ${s.trwa?'disabled':''} onclick="ocrStart()">Start</button><button class="cds--btn cds--btn--secondary" ${s.trwa?'':'disabled'} onclick="api('/api/ocr/stop',{}).then(render)">Stop</button></div>
+      </div>
+      <p class="cds--type-helper-text-01">${s.trwa?'<span class="cds--success">trwa ('+esc(s.model)+')</span>':(s.wynik?'ostatni wynik: '+esc(JSON.stringify(s.wynik)):'')}</p>
+      <h3 class="cds--section-title">Z linii poleceń</h3><pre class="cds--snippet">python -m bench.ocr lista
+python -m bench.ocr uruchom --model sonnet [--krzyzowka IMG_1803] [--limit 50]</pre></section>`;
+    if(s.trwa) setTimeout(()=>TAB==='ocr'&&render(),4000);
+  }
+  if(TAB==='modele'){
+    const ms=await api('/api/modele');
+    m.innerHTML=`<div class="cds--stack">
+      <div class="cds--row form"><button class="cds--btn cds--btn--tertiary" onclick="api('/api/modele/odswiez',{}).then(r=>{msg(JSON.stringify(r));render()})">Odśwież rejestr (OpenRouter darmowe, Ollama, claude)</button>
+      <label class="cds--form-item"><span class="cds--label">Dostawca</span><select id="m_d" class="cds--select-input"><option>ollama</option><option>openrouter</option><option>claude_cli</option></select></label>
+      <label class="cds--form-item"><span class="cds--label">Nazwa</span><input id="m_n" class="cds--text-input" placeholder="np. qwen3:4b"></label>
+      <label class="cds--form-item"><span class="cds--label">Parametry [mld]</span><input id="m_p" class="cds--text-input short" type="number" step="0.1"></label>
+      <label class="cds--form-item"><span class="cds--label">Darmowy</span><input id="m_f" class="cds--checkbox" type="checkbox" checked style="height:2.5rem"></label>
+      <button class="cds--btn cds--btn--secondary" onclick="api('/api/modele/dodaj',{dostawca:$('#m_d').value,nazwa:$('#m_n').value,parametry_mld:+$('#m_p').value||null,darmowy:$('#m_f').checked?1:0}).then(render)">Dodaj ręcznie</button></div>
+    <p class="cds--type-helper-text-01" style="max-width:90ch">„Pełny przebieg” to szacunek dla 30 tys. zapytań (6 tys. haseł × 5 wariantów) przy 300 tokenach wejścia i 80 wyjścia na zapytanie. Modele płatne są dodane jako nieaktywne; włącz je tu, gdy zdecydujesz o budżecie.</p>
+    ${T(`<th>Aktywny</th><th>Dostawca</th><th>Model</th><th class="cds--num">Parametry [mld]</th><th>Darmowy</th><th class="cds--num">$/M wej</th><th class="cds--num">$/M wyj</th><th class="cds--num">Pełny przebieg</th><th class="cds--num">Uruchomień</th><th>Uwagi</th>`,
+      ms.map(x=>`<tr><td><input type="checkbox" class="cds--checkbox" ${x.aktywny?'checked':''} onchange="api('/api/model/${encodeURIComponent(x.id)}',{aktywny:this.checked?1:0})"></td><td>${x.dostawca}</td><td class="cds--mono">${esc(x.nazwa)}</td><td class="cds--num"><input class="cds--text-input cds--text-input--sm short" type="number" step="0.1" value="${x.parametry_mld??''}" onchange="api('/api/model/${encodeURIComponent(x.id)}',{parametry_mld:+this.value||null})"></td><td>${x.darmowy?tag('darmowy','green'):tag('płatny','yellow')}</td><td class="cds--num">${x.cena_wej!=null?(1e6*x.cena_wej).toFixed(2):''}</td><td class="cds--num">${x.cena_wyj!=null?(1e6*x.cena_wyj).toFixed(2):''}</td><td class="cds--num">${x.cena_wej!=null?('$'+(30000*(300*x.cena_wej+80*x.cena_wyj)).toFixed(2)):''}</td><td class="cds--num">${x.uruchomien}</td><td class="cds--muted">${esc(x.uwagi||'')}</td></tr>`).join(''),'cds--data-table--compact')}</div>`;
+  }
+  if(TAB==='kolejka'){
+    const [ms,us,ks,w]=await Promise.all([api('/api/modele'),api('/api/uruchomienia'),api('/api/krzyzowki'),api('/api/worker')]);
+    const act=ms.filter(x=>x.aktywny);
+    m.innerHTML=`<div class="cds--stack">
+      <section class="cds--tile"><h2 class="cds--type-heading-03">Nowe uruchomienia</h2><div class="cds--row form">
+      <label class="cds--form-item"><span class="cds--label">Modele (wiele)</span><select id="q_m" class="cds--select-input" multiple size="6">${act.map(x=>`<option value="${x.id}">${x.dostawca}: ${esc(x.nazwa)}</option>`).join('')}</select></label>
+      <label class="cds--form-item"><span class="cds--label">Warianty</span><select id="q_w" class="cds--select-input" multiple size="6" style="min-width:10rem">${SL.warianty.map(w=>`<option ${w==='z_dlugoscia'?'selected':''}>${w}</option>`).join('')}</select></label>
+      <label class="cds--form-item"><span class="cds--label">Krzyżówki</span><select id="q_k" class="cds--select-input" multiple size="6" style="min-width:10rem">${ks.map(k=>`<option value="${k.id}">${k.id} (${k.gotowe})</option>`).join('')}</select></label>
+      <label class="cds--form-item"><span class="cds--label">Limit haseł</span><input id="q_l" class="cds--text-input short" type="number" placeholder="∞"></label>
+      <label class="cds--form-item"><span class="cds--label">Ziarno</span><input id="q_z" class="cds--text-input short" type="number" value="1"></label>
+      <label class="cds--form-item"><span class="cds--label">Opóźnienie [s]</span><input id="q_o" class="cds--text-input short" type="number" step="0.5" value="1"></label>
+      <label class="cds--form-item"><span class="cds--label">Temperatura</span><input id="q_t" class="cds--text-input short" type="number" step="0.1" value="0"></label>
+      <label class="cds--form-item"><span class="cds--label">Przykłady</span><input id="q_p" class="cds--checkbox" type="checkbox" style="height:2.5rem"></label>
+      <label class="cds--form-item"><span class="cds--label">Priorytet</span><input id="q_pr" class="cds--text-input short" type="number" value="100"></label>
+      <button class="cds--btn" onclick="dodajUr()">Dodaj do kolejki</button></div>
+      <p class="cds--type-helper-text-01" style="max-width:80ch">Powstaje jedno uruchomienie na każdą parę model × wariant. Worker wykonuje je po kolei (priorytet, potem kolejność), jedno zapytanie naraz z zadanym opóźnieniem; przy 429/5xx ponawia z rosnącym odstępem. Wszystko wznawialne.</p></section>
+      <section><div class="cds--row" style="margin-bottom:.5rem"><button class="cds--btn" ${w.dziala?'disabled':''} onclick="api('/api/worker/start',{}).then(render)">Uruchom workera (cała kolejka)</button><span class="cds--type-helper-text-01">worker: ${w.dziala?'<span class="cds--success">działa</span>':'nie działa'}</span></div>
+      ${T(`<th>Id</th><th>Nazwa</th><th>Status</th><th class="cds--num">Prio</th><th class="cds--num">Postęp</th><th class="cds--num">Błędy</th><th>Start</th><th class="cds--num">Czas</th><th class="cds--num">Tokeny</th><th class="cds--num">Koszt</th><th></th>`,
+      us.map(u=>`<tr><td class="cds--mono">${u.id}</td><td>${esc(u.nazwa)}</td><td>${stTag(u.status)}${u.blad?`<div class="cds--error cds--mono pre-wrap" style="max-width:40ch">${esc(u.blad.slice(-200))}</div>`:''}</td>
+      <td class="cds--num"><input class="cds--text-input cds--text-input--sm short" type="number" value="${u.priorytet}" onchange="api('/api/uruchomienie/${u.id}/priorytet',{priorytet:+this.value})"></td>
+      <td class="cds--num" style="min-width:7rem">${u.zrobione}/${u.liczba_hasel}${meter(u.zrobione,u.liczba_hasel)}</td><td class="cds--num ${u.bledy?'cds--error':''}">${u.bledy}</td><td class="cds--muted" style="white-space:nowrap">${fmtT(u.start_at)}</td><td class="cds--num">${dur(u.start_at,u.koniec_at||(u.status==='trwa'?null:u.start_at))}</td>
+      <td class="cds--num cds--muted">${u.tokeny_wej}/${u.tokeny_wyj}</td><td class="cds--num">${(u.koszt_usd||0).toFixed(3)}</td>
+      <td style="white-space:nowrap"><div class="cds--btn-set">${u.status==='trwa'?`<button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="api('/api/uruchomienie/${u.id}/stop',{}).then(render)">Stop</button>`:''}
+        ${['w_kolejce','wstrzymane','blad'].includes(u.status)?`<button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="api('/api/uruchomienie/${u.id}/start',{}).then(render)">Start</button>`:''}
+        ${['wstrzymane','blad','zakonczone'].includes(u.status)?`<button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="api('/api/uruchomienie/${u.id}/wznow',{}).then(render)">Do kolejki</button>`:''}
+        ${u.bledy?`<button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="api('/api/uruchomienie/${u.id}/powtorz_bledy',{}).then(render)">Powtórz błędy</button>`:''}
+        ${u.zrobione?`<button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="TAB='wyniki';STATE.run=${u.id};render()">Wyniki</button>`:''}
+        ${u.status!=='trwa'?`<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" onclick="if(this.dataset.c){api('/api/uruchomienie/${u.id}/usun',{}).then(render)}else{this.dataset.c=1;this.textContent='Na pewno?'}">Usuń</button>`:''}</div></td></tr>`).join(''),'cds--data-table--compact')}</section></div>`;
+    if(us.some(u=>u.status==='trwa')) setTimeout(()=>TAB==='kolejka'&&render(),5000);
+  }
+  if(TAB==='wyniki'){
+    const por=await api('/api/porownanie');
+    let h=`<div class="cds--stack"><section><h2 class="cds--type-heading-03" style="margin-bottom:.5rem">Porównanie uruchomień</h2>
+    ${T(`<th>Id</th><th>Model</th><th>Wariant</th><th class="cds--num">n</th><th class="cds--num">Trafność ścisła</th><th class="cds--num">Luźna</th><th class="cds--num">Top‑5</th><th class="cds--num">Format</th><th class="cds--num">Długość ok</th><th class="cds--num">Polska</th><th class="cds--num">Świat</th><th class="cds--num">ECE</th><th class="cds--num">Mediana ms</th><th class="cds--num">Koszt</th><th></th>`,
+    por.map(p=>{const u=p.uruchomienie,mt=p.metryki,pl=p.wg_polskosc||{};return`<tr><td class="cds--mono">${u.id}</td><td class="cds--mono">${esc(u.model_id)}</td><td>${tag(u.wariant)}</td><td class="cds--num">${mt.trafnosc.n}</td><td class="cds--num"><b>${ci(mt.trafnosc)}</b></td><td class="cds--num">${ci(mt.trafnosc_luzno)}</td><td class="cds--num">${ci(mt.top5)}</td><td class="cds--num">${ci(mt.format_ok)}</td><td class="cds--num">${ci(mt.dlugosc_ok)}</td><td class="cds--num">${ci(pl.polska)}</td><td class="cds--num">${ci(pl.swiat)}</td><td class="cds--num">${mt.kalibracja.ece??'–'}</td><td class="cds--num">${mt.czas_ms_mediana??''}</td><td class="cds--num">${mt.koszt_usd}</td><td><button class="cds--btn cds--btn--ghost cds--btn--sm" onclick="STATE.run=${u.id};render()">Szczegóły</button></td></tr>`}).join(''),'cds--data-table--compact')}
+    <p class="cds--type-helper-text-01">Trafność ścisła: pełna zgodność z kluczem wraz z polskimi znakami. Luźna: po zdjęciu znaków diakrytycznych (pomocniczo). W nawiasach 95 % przedział ufności (bootstrap).</p></section>`;
+    if(STATE.run){
+      const r=await api(`/api/wyniki/${STATE.run}`); const mt=r.metryki;
+      const dim=(name,obj)=>`<h3 class="cds--section-title">${name}</h3><table class="cds--structured-list"><tbody>${Object.entries(obj).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="cds--num cds--tabular">${v.trafnosc.n}</td><td class="cds--num">${ci(v.trafnosc)}</td><td style="width:35%"><div class="cds--data-bar"><i style="width:${Math.round(100*(v.trafnosc.srednia||0))}%"></i></div></td></tr>`).join('')}</tbody></table>`;
+      h+=`<section class="cds--tile"><div class="cds--row" style="justify-content:space-between;align-items:center"><h2 class="cds--type-heading-03" style="margin:0">Uruchomienie ${r.uruchomienie.id}: ${esc(r.uruchomienie.nazwa)}</h2><a class="cds--btn cds--btn--tertiary cds--btn--sm" href="/api/wyniki/${r.uruchomienie.id}.csv">Pobierz CSV</a></div>
+        <div class="cds--grid cds--grid--2"><div>${dim('Wg kategorii',mt.wg.kategoria)}${dim('Wg polskości',mt.wg.polskosc)}</div><div>${dim('Wg długości hasła',mt.wg.dlugosc)}${dim('Wg typu opisu',mt.wg.typ_opisu)}
+        <h3 class="cds--section-title">Kalibracja</h3><div class="cds--mono">Brier ${mt.kalibracja.brier??'–'} · ECE ${mt.kalibracja.ece??'–'} · średnia pewność ${mt.kalibracja.srednia_pewnosc??'–'} (n=${mt.kalibracja.n})</div></div></div>
+        <h3 class="cds--section-title">Odpowiedzi</h3>
+        ${T(`<th>Hasło</th><th>Opis</th><th>Klucz</th><th>Odpowiedź</th><th>Kandydaci</th><th class="cds--num">Pewność</th><th>Ścisła</th><th>Luźna</th><th class="cds--num">ms</th><th>Błąd</th>`,
+        r.odpowiedzi.map(o=>`<tr><td class="cds--mono">${esc(o.haslo_id)}</td><td>${esc(o.opis)}</td><td class="cds--mono">${esc(o.klucz)}</td><td class="cds--mono ${o.poprawna?'cds--success':(o.poprawna_luzno?'cds--warning':'cds--error')}">${esc(o.odpowiedz||'')}</td><td class="cds--mono cds--muted">${esc((JSON.parse(o.kandydaci||'[]')).join(', '))}</td><td class="cds--num">${o.pewnosc??''}</td><td>${o.poprawna?tag('tak','green'):tag('nie','red')}</td><td>${o.poprawna_luzno?tag('tak','green'):tag('nie','red')}</td><td class="cds--num">${o.czas_ms??''}</td><td class="cds--error">${esc((o.blad||'').slice(0,80))}</td></tr>`).join(''),'cds--data-table--compact')}</section>`;
+    }
+    m.innerHTML=h+'</div>';
+  }
+  const w=await api('/api/worker'); $('#worker').textContent=w.dziala?'worker: działa':'worker: zatrzymany';
+}
+async function imp(){const r=await api('/api/import',{katalog:'output'});msg(`zaimportowano ${r.zaimportowano.length} krzyżówek`);render()}
+async function hasla(k){
+  STATE.krz=k; const hs=await api(`/api/hasla?krzyzowka=${encodeURIComponent(k)}`);
+  const sel=(id,opts,v,f)=>`<select class="cds--select-input cds--select-input--sm" onchange="zapisz('${id}',{${f}:this.value||null})"><option value="">–</option>${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+  $('#hasla').innerHTML=`<section><div class="cds--row" style="justify-content:space-between;align-items:center;margin-bottom:.5rem"><h2 class="cds--type-heading-03" style="margin:0">Hasła: ${k}</h2><button class="cds--btn cds--btn--tertiary cds--btn--sm" onclick="api('/api/hasla/gotowe',{krzyzowka:'${k}'}).then(r=>{msg('oznaczono gotowe: '+r.zmieniono);hasla('${k}')})">Oznacz gotowe wszystkie z opisem i odpowiedzią</button></div>
+  <p class="cds--type-helper-text-01">Odpowiedź: wielkie litery z polskimi znakami; długość musi zgadzać się z siatką. Opis można poprawić po OCR.</p>
+  ${T(`<th>Id</th><th>Wycinek</th><th>Opis</th><th class="cds--num">Dł.</th><th>Kier.</th><th>Odpowiedź</th><th>Kategoria</th><th>Polskość</th><th>Typ opisu</th><th>Gotowe</th>`,
+  hs.map(h=>`<tr><td class="cds--mono">H${h.nr}</td><td>${h.ramka_id?`<img class="crop" src="/wycinek/${h.ramka_id}" alt="">`:tag('brak ramki','red')}</td>
+    <td><input class="cds--text-input cds--text-input--sm" style="min-width:16em" value="${esc(h.opis||'')}" placeholder="${h.ocr_status==='gotowe'?'':'brak OCR'}" onchange="zapisz('${h.id}',{opis:this.value})"></td>
+    <td class="cds--num">${h.dlugosc}</td><td class="cds--muted">${h.kierunek}</td><td><input class="cds--text-input cds--text-input--sm cds--text-input--mono" style="width:11em" value="${esc(h.odpowiedz||'')}" onchange="zapisz('${h.id}',{odpowiedz:this.value})"></td>
+    <td>${sel(h.id,SL.kategorie,h.kategoria,'kategoria')}</td><td>${sel(h.id,SL.polskosc,h.polskosc,'polskosc')}</td><td>${sel(h.id,SL.typy_opisu,h.typ_opisu,'typ_opisu')}</td>
+    <td><input type="checkbox" class="cds--checkbox" ${h.gotowe?'checked':''} onchange="zapisz('${h.id}',{gotowe:this.checked?1:0})"></td></tr>`).join(''),'cds--data-table--compact')}</section>`;
+  $('#hasla').scrollIntoView({behavior:'smooth'});
+}
+async function zapisz(id,f){try{await api('/api/haslo/'+encodeURIComponent(id),f);msg('zapisano '+id)}catch(e){}}
+async function ocrStart(){await api('/api/ocr/start',{model:$('#ocr_model').value,krzyzowka:$('#ocr_krz').value,limit:$('#ocr_limit').value,opoznienie:$('#ocr_op').value});render()}
+async function dodajUr(){
+  const sv=id=>[...$(id).selectedOptions].map(o=>o.value);
+  const pod={}; if(sv('#q_k').length)pod.krzyzowki=sv('#q_k'); if($('#q_l').value)pod.limit=+$('#q_l').value; pod.ziarno=+$('#q_z').value;
+  const r=await api('/api/uruchomienia',{modele:sv('#q_m'),warianty:sv('#q_w'),podzbior:pod,parametry:{opoznienie_s:+$('#q_o').value,temperatura:+$('#q_t').value,przyklady:$('#q_p').checked},priorytet:+$('#q_pr').value});
+  msg(`dodano ${r.ids.length} uruchomień`); render();
+}
+render();
+</script>
+</body>
+</html>
